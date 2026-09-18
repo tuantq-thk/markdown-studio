@@ -188,7 +188,7 @@ markdown-studio/
 
 ## Chạy local
 
-Yêu cầu Node.js 20.19+ hoặc 22.12+.
+Yêu cầu Node.js 24 (khớp với môi trường GitHub Actions).
 
 ```bash
 npm install
@@ -209,8 +209,10 @@ Test bao phủ import file, giới hạn dung lượng, folder path, IndexedDB, 
 ## Deploy GitHub Pages
 
 1. Push project lên GitHub.
-2. Mở **Settings → Pages → Source** và chọn **GitHub Actions**.
-3. Push vào `main`; workflow sẽ chạy test, lint, build rồi deploy thư mục `dist`.
+2. Push vào `main`; workflow sẽ chạy test, lint, build rồi deploy thư mục `dist`.
+3. Workflow dùng `enablement: true` để tự bật Pages và chọn GitHub Actions làm nguồn ở lần deploy đầu tiên.
+
+Nếu bước **Configure GitHub Pages** vẫn báo `Not Found`, tài khoản chạy workflow không có quyền quản trị repository hoặc tổ chức đã chặn GitHub Pages. Khi đó, dùng tài khoản admin mở **Settings → Pages → Build and deployment → Source**, chọn **GitHub Actions**, rồi chạy lại workflow. Không đặt `ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION`; workflow đã dùng Node.js 24 và các action chạy trên runtime hiện hành.
 
 Vite dùng `base: './'`, do đó app hoạt động ở cả custom domain và project page dạng `https://username.github.io/markdown-studio/`.
 

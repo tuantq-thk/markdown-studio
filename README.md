@@ -20,6 +20,8 @@ Markdown Studio là ứng dụng đọc, chỉnh sửa và tổ chức tài li�
 - Import nguyên cây thư mục bằng `showDirectoryPicker()` trên Chrome/Edge.
 - File import được đưa vào thư mục đang chọn; đường dẫn tương đối có sẵn được giữ lại.
 - Tạo thư mục nhiều cấp, chọn thư mục đích và chuyển tài liệu giữa các thư mục.
+- Kéo thả file để đổi thứ tự hoặc chuyển folder; kéo folder để đổi thứ tự, đổi cấp hoặc đưa về root.
+- Menu ba chấm trên từng folder gom thao tác đổi tên và chuyển vào thùng rác.
 - Thu gọn từng thư mục hoặc toàn bộ thư mục gốc.
 - Đổi tên file/thư mục, chuyển file hoặc cả cây thư mục vào thùng rác và chặn đường dẫn trùng.
 - Tìm full-text theo tên, đường dẫn và nội dung bằng Web Worker; kết quả có xếp hạng và snippet theo mô hình RAG-lite cục bộ.
@@ -31,6 +33,7 @@ Markdown Studio là ứng dụng đọc, chỉnh sửa và tổ chức tài li�
 ### Markdown và code
 
 - CommonMark cùng bảng, strikethrough, autolink, task list và footnote.
+- Editor toolbar hỗ trợ H1–H3, bold, italic, strikethrough, inline code, code block, link, quote, bullet list, ordered list, checklist và horizontal rule.
 - Raw HTML bị vô hiệu hóa; HTML kết quả tiếp tục được sanitize bằng DOMPurify.
 - Shiki chạy trong Web Worker và chỉ đóng gói nhóm grammar phổ biến: PHP, JavaScript/TypeScript, Python, Ruby, Java, C/C++, C#, Go, Rust, SQL, Bash, JSON, YAML, HTML, CSS/SCSS, Vue, JSX/TSX, Markdown, Docker và Diff.
 - Code block có nhãn ngôn ngữ, theme sáng/tối theo từng token và nút sao chép.
@@ -215,16 +218,18 @@ markdown-studio/
 ├── public/favicon.svg
 ├── src/
 │   ├── components/
-│   │   └── FolderTree.tsx         # Cây folder/file và collapse
+│   │   ├── EditorToolbar.tsx      # Thanh công cụ soạn Markdown
+│   │   └── FolderTree.tsx         # Cây kéo-thả, menu và virtualization
 │   ├── lib/
 │   │   ├── diagrams.ts            # Mermaid/UML renderer
 │   │   ├── diagram-client.ts       # Giao tiếp Mermaid parser worker
+│   │   ├── editor-format.ts        # Selection-aware Markdown formatting
 │   │   ├── files.ts               # Validate và đọc file import
 │   │   ├── highlight-client.ts     # Giao tiếp Shiki worker
 │   │   ├── highlighter.ts          # Shiki grammar/highlight engine
 │   │   ├── markdown.ts            # Markdown, Shiki, sanitize, TOC, code toolbar
-│   │   ├── search-client.ts       # Giao tiếp full-text search worker
-│   │   ├── search-engine.ts       # Index, ranking và snippet RAG-lite
+│   │   ├── search-client.ts        # Giao tiếp full-text search worker
+│   │   ├── search-engine.ts        # Index, ranking và snippet RAG-lite
 │   │   ├── storage.ts             # IndexedDB repository
 │   │   └── workspace.ts           # Backup/restore schema và validation
 │   ├── test/setup.ts

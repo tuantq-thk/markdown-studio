@@ -110,7 +110,15 @@ export async function getFolders(): Promise<string[]> {
 }
 
 export async function saveFolders(folders: string[]): Promise<void> {
-  await (await db()).put(META, [...new Set(folders)].sort(), 'folders')
+  await (await db()).put(META, [...new Set(folders)], 'folders')
+}
+
+export async function getDocumentOrder(): Promise<string[]> {
+  return (await (await db()).get(META, 'documentOrder')) ?? []
+}
+
+export async function saveDocumentOrder(ids: string[]): Promise<void> {
+  await (await db()).put(META, [...new Set(ids)], 'documentOrder')
 }
 
 export async function replaceWorkspace(documents: DocumentRecord[], folders: string[], activeId?: string): Promise<void> {
@@ -120,7 +128,8 @@ export async function replaceWorkspace(documents: DocumentRecord[], folders: str
   await transaction.objectStore(TRASH).clear()
   await transaction.objectStore(HISTORY).clear()
   await Promise.all(documents.map((document) => transaction.objectStore(STORE).put(document)))
-  await transaction.objectStore(META).put([...new Set(folders)].sort(), 'folders')
+  await transaction.objectStore(META).put([...new Set(folders)], 'folders')
+  await transaction.objectStore(META).put(documents.map((document) => document.id), 'documentOrder')
   if (activeId) await transaction.objectStore(META).put(activeId, 'activeId')
   await transaction.done
 }

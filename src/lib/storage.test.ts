@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { deleteDocument, getActiveId, getDocumentHistory, getDocuments, getFolders, getTrash, moveDocumentToTrash, restoreTrashedDocument, saveActiveId, saveDocument, saveDocuments, saveDocumentWithHistory, saveFolders } from './storage'
+import { deleteDocument, getActiveId, getDocumentHistory, getDocumentOrder, getDocuments, getFolders, getTrash, moveDocumentToTrash, restoreTrashedDocument, saveActiveId, saveDocument, saveDocumentOrder, saveDocuments, saveDocumentWithHistory, saveFolders } from './storage'
 import type { DocumentRecord } from '../types'
 
 const makeDocument = (id: string): DocumentRecord => ({ id, name: `${id}.md`, path: `${id}.md`, content: `# ${id}`, updatedAt: 1 })
@@ -26,9 +26,11 @@ describe('IndexedDB storage', () => {
     expect((await getDocuments()).map((doc) => doc.id)).toEqual(['two'])
   })
 
-  it('deduplicates and sorts folder paths', async () => {
+  it('deduplicates folder paths while preserving manual order', async () => {
     await saveFolders(['Laravel/Queue', 'Laravel', 'Laravel/Queue'])
-    expect(await getFolders()).toEqual(['Laravel', 'Laravel/Queue'])
+    expect(await getFolders()).toEqual(['Laravel/Queue', 'Laravel'])
+    await saveDocumentOrder(['two', 'one', 'two'])
+    expect(await getDocumentOrder()).toEqual(['two', 'one'])
   })
 
   it('moves documents to trash and restores them', async () => {

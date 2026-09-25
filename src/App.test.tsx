@@ -47,6 +47,19 @@ describe('Markdown Studio', () => {
     expect(screen.getByLabelText('Nội dung Markdown')).toBeInTheDocument()
   })
 
+  it('formats the current editor selection from the authoring toolbar', async () => {
+    render(<App />)
+    await screen.findByRole('heading', { name: 'Chào mừng đến Markdown Studio' }, { timeout: 5000 })
+    await userEvent.click(screen.getByRole('button', { name: 'Editor' }))
+    const editor = screen.getByLabelText('Nội dung Markdown') as HTMLTextAreaElement
+    fireEvent.change(editor, { target: { value: 'hello world' } })
+    editor.setSelectionRange(6, 11)
+    await userEvent.click(screen.getByRole('button', { name: 'In đậm' }))
+    expect(editor.value).toBe('hello **world**')
+    expect(editor.selectionStart).toBe(8)
+    expect(editor.selectionEnd).toBe(13)
+  })
+
   it('creates a folder and a document inside it', async () => {
     vi.spyOn(window, 'prompt').mockReturnValue('Laravel')
     render(<App />)

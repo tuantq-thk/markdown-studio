@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArchiveRestore, ArrowDownToLine, ArrowUp, BookOpen, Check, ChevronLeft, ChevronRight, Clock3, Command, DatabaseBackup, FilePlus2, Files, FolderInput, FolderPen, FolderPlus, FolderX, HardDrive, History, Image, ImageOff, Maximize2, Menu, Minimize2, Moon, PanelLeftClose, PanelRightClose, Pencil, Plus, RotateCcw, Save, Search, Sun, Trash2, Upload, X } from 'lucide-react'
+import { ArchiveRestore, ArrowDownToLine, ArrowUp, BookOpen, Check, ChevronLeft, ChevronRight, Clock3, Command, DatabaseBackup, FilePlus2, Files, FolderInput, FolderPlus, HardDrive, History, Image, ImageOff, Maximize2, Menu, Minimize2, Moon, PanelLeftClose, PanelRightClose, Pencil, Plus, RotateCcw, Save, Search, Sun, Trash2, Upload, X } from 'lucide-react'
 import type { DocumentRecord, Heading } from './types'
-import { deleteDocument, getActiveId, getDocumentHistory, getDocuments, getFolders, getTrash, moveDocumentToTrash, replaceWorkspace, restoreTrashedDocument, saveActiveId, saveDocument, saveDocuments, saveDocumentWithHistory, saveFolders, type HistoryRecord, type TrashRecord } from './lib/storage'
+import { deleteDocument, getActiveId, getDocumentHistory, getDocumentOrder, getDocuments, getFolders, getTrash, moveDocumentToTrash, replaceWorkspace, restoreTrashedDocument, saveActiveId, saveDocument, saveDocumentOrder, saveDocuments, saveDocumentWithHistory, saveFolders, type HistoryRecord, type TrashRecord } from './lib/storage'
 import { filesToDocuments } from './lib/files'
 import { createWorkspaceBackup, createWorkspaceZip, downloadBlob, parseWorkspaceFile } from './lib/workspace'
 import { FolderTree } from './components/FolderTree'
 import { indexWorkspace, searchWorkspace, type SearchHit } from './lib/search-client'
+import { EditorToolbar } from './components/EditorToolbar'
+import { applyMarkdownFormat, type MarkdownFormat } from './lib/editor-format'
 
 const WELCOME = `# Chào mừng đến Markdown Studio
 
@@ -22,12 +24,16 @@ Markdown Studio là workspace đọc và chỉnh sửa Markdown chạy hoàn to�
 4. Tạo folder, đổi tên, di chuyển và tìm full-text trong toàn bộ nội dung từ sidebar.
 5. Nhấn \`Ctrl/⌘ + K\` để mở command palette.
 
+Khi ở **Editor**, dùng thanh công cụ để chèn heading, bold, italic, code, link, quote, danh sách và checklist. Bôi đen nội dung trước khi chọn định dạng để giữ đúng selection.
+
 ## Đọc tập trung
 
 - Nút mở rộng hoặc \`Ctrl/⌘ + Shift + F\` bật chế độ đọc toàn trang.
 - TOC có vùng cuộn riêng, tự active và tự cuộn theo heading đang đọc.
 - Thanh tiến trình và nút trở về đầu trang giúp theo dõi tài liệu dài.
 - Kéo mép sidebar/TOC để đổi độ rộng; app tự ghi nhớ kích thước.
+- Kéo file lên file khác để đổi thứ tự, kéo file vào folder để di chuyển; kéo folder vào folder hoặc về root để đổi cấp.
+- Menu ba chấm trên từng folder chứa thao tác đổi tên và chuyển vào thùng rác.
 
 ## Markdown, code và diagram
 
@@ -160,14 +166,16 @@ export default function App() {
   const fileHandles = useRef(new Map<string, FileSystemFileHandle>())
   const noticeTimer = useRef<number | undefined>(undefined)
   const previewRef = useRef<HTMLElement>(null)
+  const editorRef = useRef<HTMLTextAreaElement>(null)
   const tocRef = useRef<HTMLElement>(null)
   const commandPaletteRef = useRef<HTMLElement>(null)
   const active = documents.find((document) => document.id === activeId)
 
   useEffect(() => { void (async () => {
     try {
-      const [stored, storedFolders, storedTrash] = await Promise.all([getDocuments(), getFolders(), getTrash()])
-      const docs = stored.length ? stored.sort((a, b) => b.updatedAt - a.updatedAt) : [createDocument()]
+      const [stored, storedFolders, storedTrash, storedOrder] = await Promise.all([getDocuments(), getFolders(), getTrash(), getDocumentOrder()])
+      const order = new Map(storedOrder.map((id, index) => [id, index]))
+      const docs = stored.length ? stored.sort((a, b) => (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.id) ?? Number.MAX_SAFE_INTEGER) || b.updatedAt - a.updatedAt) : [createDocument()]
       if (!stored.length) await saveDocument(docs[0])
       const inferred = docs.map((doc) => folderOf(doc.path)).filter(Boolean)
       const allFolders = [...new Set([...storedFolders, ...inferred])].sort()
@@ -275,6 +283,14 @@ export default function App() {
     saveTimers.current.set(active.id, timer)
   }
 
+  const formatEditor = (format: MarkdownFormat) => {
+    const editor = editorRef.current
+    if (!editor || !active) return
+    const result = applyMarkdownFormat(active.content, editor.selectionStart, editor.selectionEnd, format)
+    updateContent(result.value)
+    requestAnimationFrame(() => { editor.focus(); editor.setSelectionRange(result.selectionStart, result.selectionEnd) })
+  }
+
   const importFiles = useCallback(async (list: FileList | File[]) => {
     const result = await filesToDocuments(Array.from(list), selectedFolder)
     const imported: DocumentRecord[] = []
@@ -338,6 +354,39 @@ export default function App() {
     setDocuments((items) => items.map((item) => item.id === active.id ? next : item)); try { await saveDocument(next) } catch { setStorageError('Không thể lưu vị trí tài liệu mới.') }; notify(folder ? `Đã chuyển vào ${folder}` : 'Đã chuyển ra thư mục gốc')
   }
 
+  const moveDocumentFromTree = async (id: string, targetFolder: string, beforeId?: string) => {
+    if (id === beforeId) return
+    const source = documents.find((document) => document.id === id)
+    if (!source) return
+    const targetPath = [targetFolder, source.name].filter(Boolean).join('/')
+    if (documents.some((document) => document.id !== id && document.path.toLowerCase() === targetPath.toLowerCase())) return notify('Đã có file cùng tên tại vị trí đích', 2800)
+    const moved = { ...source, path: targetPath, updatedAt: Date.now() }
+    const reordered = documents.filter((document) => document.id !== id)
+    const beforeIndex = beforeId ? reordered.findIndex((document) => document.id === beforeId) : -1
+    reordered.splice(beforeIndex >= 0 ? beforeIndex : reordered.length, 0, moved)
+    setDocuments(reordered)
+    try { await saveDocument(moved); await saveDocumentOrder(reordered.map((document) => document.id)); notify(targetFolder === folderOf(source.path) ? 'Đã sắp xếp tài liệu' : `Đã chuyển vào ${targetFolder || 'thư mục gốc'}`) } catch { setStorageError('Không thể lưu thứ tự hoặc vị trí tài liệu.') }
+  }
+
+  const moveFolderFromTree = async (source: string, targetParent: string, beforePath?: string) => {
+    if (source === beforePath) return
+    if (!source || targetParent === source || targetParent.startsWith(`${source}/`)) return notify('Không thể chuyển folder vào chính nó', 2800)
+    const sourceParent = folderOf(source)
+    const target = [targetParent, basename(source)].filter(Boolean).join('/')
+    if (target !== source && folders.some((folder) => folder !== source && (folder === target || folder.startsWith(`${target}/`)))) return notify('Folder đích đã tồn tại', 2800)
+    const rewrite = (path: string) => path === source ? target : path.startsWith(`${source}/`) ? `${target}${path.slice(source.length)}` : path
+    const nextFolders = folders.filter((folder) => folder !== source && !folder.startsWith(`${source}/`))
+    const movedFolders = folders.filter((folder) => folder === source || folder.startsWith(`${source}/`)).map(rewrite)
+    const beforeIndex = beforePath ? nextFolders.indexOf(beforePath) : -1
+    nextFolders.splice(beforeIndex >= 0 ? beforeIndex : nextFolders.length, 0, ...movedFolders)
+    const nextDocuments = documents.map((document) => document.path.startsWith(`${source}/`) ? { ...document, path: rewrite(document.path), updatedAt: Date.now() } : document)
+    if (new Set(nextDocuments.map((document) => document.path.toLowerCase())).size !== nextDocuments.length) return notify('Di chuyển sẽ tạo đường dẫn trùng', 2800)
+    try { await saveFolders(nextFolders); await saveDocuments(nextDocuments.filter((document) => document.path.startsWith(`${target}/`))) } catch { return setStorageError('Không thể lưu vị trí folder mới.') }
+    setFolders(nextFolders); setDocuments(nextDocuments)
+    if (selectedFolder === source || selectedFolder.startsWith(`${source}/`)) setSelectedFolder(rewrite(selectedFolder))
+    notify(targetParent === sourceParent ? 'Đã sắp xếp folder' : `Đã chuyển folder vào ${targetParent || 'thư mục gốc'}`)
+  }
+
   const renameActive = async () => {
     if (!active) return
     const requested = prompt('Tên file mới:', active.name)?.trim()
@@ -352,29 +401,29 @@ export default function App() {
     try { await saveDocument(next); notify('Đã đổi tên file') } catch { setStorageError('Không thể lưu tên file mới.') }
   }
 
-  const renameSelectedFolder = async () => {
-    if (!selectedFolder) return
-    const parent = selectedFolder.split('/').slice(0, -1).join('/')
-    const requested = prompt('Tên thư mục mới:', basename(selectedFolder))?.trim().replace(/^\/+|\/+$/g, '')
+  const renameSelectedFolder = async (folderPath = selectedFolder) => {
+    if (!folderPath) return
+    const parent = folderPath.split('/').slice(0, -1).join('/')
+    const requested = prompt('Tên thư mục mới:', basename(folderPath))?.trim().replace(/^\/+|\/+$/g, '')
     if (!requested || requested.includes('/')) return
     const target = [parent, requested].filter(Boolean).join('/')
-    if (folders.some((folder) => folder !== selectedFolder && (folder === target || folder.startsWith(`${target}/`)))) return notify('Thư mục đích đã tồn tại', 2800)
-    const rewrite = (path: string) => path === selectedFolder ? target : path.startsWith(`${selectedFolder}/`) ? `${target}${path.slice(selectedFolder.length)}` : path
+    if (folders.some((folder) => folder !== folderPath && (folder === target || folder.startsWith(`${target}/`)))) return notify('Thư mục đích đã tồn tại', 2800)
+    const rewrite = (path: string) => path === folderPath ? target : path.startsWith(`${folderPath}/`) ? `${target}${path.slice(folderPath.length)}` : path
     const nextFolders = folders.map(rewrite)
     const nextDocuments = documents.map((document) => document.path.startsWith(`${selectedFolder}/`) ? { ...document, path: rewrite(document.path), updatedAt: Date.now() } : document)
     if (new Set(nextDocuments.map((document) => document.path.toLowerCase())).size !== nextDocuments.length) return notify('Đổi tên sẽ tạo đường dẫn trùng', 3000)
     try { await saveDocuments(nextDocuments.filter((document) => document.path.startsWith(`${target}/`))); await saveFolders(nextFolders) } catch { setStorageError('Không thể lưu thay đổi thư mục.') }
-    setFolders(nextFolders); setDocuments(nextDocuments); setSelectedFolder(target); notify('Đã đổi tên thư mục')
+    setFolders(nextFolders); setDocuments(nextDocuments); if (selectedFolder === folderPath) setSelectedFolder(target); notify('Đã đổi tên thư mục')
   }
 
-  const deleteSelectedFolder = async () => {
-    if (!selectedFolder) return
-    const affected = documents.filter((document) => document.path.startsWith(`${selectedFolder}/`))
-    if (!confirm(`Xóa thư mục “${selectedFolder}” và ${affected.length} tài liệu bên trong?`)) return
+  const deleteSelectedFolder = async (folderPath = selectedFolder) => {
+    if (!folderPath) return
+    const affected = documents.filter((document) => document.path.startsWith(`${folderPath}/`))
+    if (!confirm(`Xóa thư mục “${folderPath}” và ${affected.length} tài liệu bên trong?`)) return
     affected.forEach((document) => { window.clearTimeout(saveTimers.current.get(document.id)); saveTimers.current.delete(document.id) })
-    try { await Promise.all(affected.map((document) => moveDocumentToTrash(document))); const nextFolders = folders.filter((folder) => folder !== selectedFolder && !folder.startsWith(`${selectedFolder}/`)); await saveFolders(nextFolders); setFolders(nextFolders); setTrash((items) => [...affected.map((document) => ({ ...document, deletedAt: Date.now() })), ...items]); setLastTrashed(affected.map((document) => document.id)) } catch { setStorageError('Không thể chuyển đầy đủ thư mục vào thùng rác.') }
+    try { await Promise.all(affected.map((document) => moveDocumentToTrash(document))); const nextFolders = folders.filter((folder) => folder !== folderPath && !folder.startsWith(`${folderPath}/`)); await saveFolders(nextFolders); setFolders(nextFolders); setTrash((items) => [...affected.map((document) => ({ ...document, deletedAt: Date.now() })), ...items]); setLastTrashed(affected.map((document) => document.id)) } catch { setStorageError('Không thể chuyển đầy đủ thư mục vào thùng rác.') }
     const remaining = documents.filter((document) => !affected.some((item) => item.id === document.id))
-    setDocuments(remaining); setSelectedFolder('')
+    setDocuments(remaining); if (selectedFolder === folderPath || selectedFolder.startsWith(`${folderPath}/`)) setSelectedFolder('')
     if (!remaining.length) { const fresh = createDocument('', 'untitled.md', '# Tài liệu mới\n'); setDocuments([fresh]); setActiveId(fresh.id); try { await saveDocument(fresh) } catch { setStorageError('Không thể tạo tài liệu thay thế.') } }
     else if (affected.some((document) => document.id === activeId)) selectDocument(remaining[0].id)
     notify('Đã chuyển thư mục vào thùng rác — có thể hoàn tác', 5000)
@@ -592,8 +641,7 @@ export default function App() {
         <label className="search"><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm tên, path hoặc nội dung…" /></label>
         <div className="file-count"><Files /> {filtered.length} tài liệu <span>{query ? '• full-text' : selectedFolder ? `• ${selectedFolder}` : '• thư mục gốc'}</span></div>
         {query && searchHits[0]?.snippet && <button className="search-best-hit" onClick={() => selectDocument(searchHits[0].id)}><strong>Kết quả phù hợp nhất</strong><span>{searchHits[0].snippet}</span></button>}
-        {selectedFolder && <div className="folder-actions"><button onClick={() => void renameSelectedFolder()}><FolderPen /> Đổi tên</button><button className="danger" onClick={() => void deleteSelectedFolder()}><FolderX /> Xóa</button></div>}
-        <FolderTree documents={filtered} folders={folders} activeId={activeId} selectedFolder={selectedFolder} collapsed={collapsedFolders} onSelectDocument={selectDocument} onSelectFolder={setSelectedFolder} onToggleFolder={(path) => setCollapsedFolders((current) => { const next = new Set(current); if (next.has(path)) next.delete(path); else next.add(path); return next })} />
+        <FolderTree documents={filtered} folders={folders} activeId={activeId} selectedFolder={selectedFolder} collapsed={collapsedFolders} onSelectDocument={selectDocument} onSelectFolder={setSelectedFolder} onToggleFolder={(path) => setCollapsedFolders((current) => { const next = new Set(current); if (next.has(path)) next.delete(path); else next.add(path); return next })} onMoveDocument={(id, folder, beforeId) => void moveDocumentFromTree(id, folder, beforeId)} onMoveFolder={(source, target, beforePath) => void moveFolderFromTree(source, target, beforePath)} onRenameFolder={(path) => void renameSelectedFolder(path)} onDeleteFolder={(path) => void deleteSelectedFolder(path)} />
         <div className={`storage-dashboard ${storagePercent >= 80 ? 'warning' : ''}`} title={`${formatBytes(storageEstimate.usage)} / ${formatBytes(storageEstimate.quota)}`}><div><HardDrive /><strong>Dung lượng</strong><span>{storageEstimate.quota ? `${storagePercent.toFixed(1)}%` : 'N/A'}</span></div><div className="storage-meter"><i style={{ width: `${storagePercent}%` }} /></div><small>{formatBytes(storageEstimate.usage)} / {storageEstimate.quota ? formatBytes(storageEstimate.quota) : 'không xác định'}{storagePercent >= 80 ? ' • Nên backup và dọn thùng rác' : ''}</small></div>
         <div className="privacy"><span className="privacy-icon">⌁</span><div><strong>Lưu cục bộ</strong><p>Tài liệu không rời khỏi trình duyệt.</p></div></div>
         <div className="panel-resizer sidebar-resizer" onPointerDown={(event) => startPanelResize('sidebar', event)} role="separator" aria-label="Thay đổi độ rộng thư viện" />
@@ -604,7 +652,7 @@ export default function App() {
           <select className="folder-select" aria-label="Chuyển tài liệu vào thư mục" value={active ? folderOf(active.path) : ''} onChange={(event) => void moveActive(event.target.value)}><option value="">Thư mục gốc</option>{folders.map((folder) => <option key={folder} value={folder}>{folder}</option>)}</select>
           <button className="icon-button" onClick={() => setAllowRemoteImages((value) => !value)} aria-label={allowRemoteImages ? 'Chặn ảnh từ xa' : 'Cho phép ảnh từ xa'} title={allowRemoteImages ? 'Ảnh từ xa đang được phép' : 'Ảnh từ xa đang bị chặn'}>{allowRemoteImages ? <Image /> : <ImageOff />}</button><button className="icon-button" onClick={() => void openHistory()} aria-label="Lịch sử tài liệu" title="Lịch sử phiên bản"><History /></button><button className="icon-button" onClick={() => void renameActive()} aria-label="Đổi tên tài liệu" title="Đổi tên"><Pencil /></button><button className="icon-button" onClick={() => void saveToDisk()} aria-label="Lưu trực tiếp về máy" title="Lưu trực tiếp bằng File System Access API"><Save /></button><button className="icon-button" onClick={downloadActive} aria-label="Tải file về máy" title="Tải file về máy (Ctrl/⌘ S)"><ArrowDownToLine /></button><button className="icon-button" onClick={() => { setMode('preview'); setReadingMode(true) }} aria-label="Chế độ đọc toàn trang" title="Đọc toàn trang (Ctrl/⌘ ⇧ F)"><Maximize2 /></button><button className="icon-button danger" onClick={() => void removeActive()} aria-label="Chuyển vào thùng rác"><Trash2 /></button><button className="icon-button desktop-only" onClick={() => setTocOpen(!tocOpen)} aria-label="Ẩn hiện mục lục">{tocOpen ? <PanelRightClose /> : <ChevronLeft />}</button>
         </div>
-        {mode === 'editor' ? <textarea className="editor" aria-label="Nội dung Markdown" spellCheck={false} value={active?.content ?? ''} onChange={(event) => updateContent(event.target.value)} /> : <article ref={previewRef} className="preview markdown-body" onScroll={updateReadingState} onClick={(event) => void onPreviewClick(event)} dangerouslySetInnerHTML={{ __html: html }} />}
+        {mode === 'editor' ? <div className="editor-shell"><EditorToolbar onFormat={formatEditor} /><textarea ref={editorRef} className="editor" aria-label="Nội dung Markdown" spellCheck={false} value={active?.content ?? ''} onChange={(event) => updateContent(event.target.value)} /></div> : <article ref={previewRef} className="preview markdown-body" onScroll={updateReadingState} onClick={(event) => void onPreviewClick(event)} dangerouslySetInnerHTML={{ __html: html }} />}
         <div className="shortcut-hints"><span><kbd>⌘/Ctrl S</kbd> tải file</span><span><kbd>⌘/Ctrl O</kbd> mở file</span><span><kbd>⌘/Ctrl ⇧ P</kbd> đổi chế độ</span><span><kbd>⌘/Ctrl ⇧ F</kbd> đọc toàn trang</span></div>
         {mode === 'preview' && readingProgress > 12 && <button className="back-to-top" onClick={() => previewRef.current?.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="Lên đầu trang" title="Lên đầu trang"><ArrowUp /></button>}
         {readingMode && <button className="exit-reading" onClick={() => setReadingMode(false)} aria-label="Thoát chế độ đọc toàn trang" title="Thoát (Esc)"><Minimize2 /><span>Thoát chế độ đọc</span></button>}

@@ -29,7 +29,7 @@ async function getHighlighter() {
 
 async function loadLanguages(source: string) {
   const highlighter = await getHighlighter()
-  const requested = [...source.matchAll(/^```\s*([\w#+.-]+)/gm)].map((match) => languageAliases[match[1].toLowerCase()] ?? match[1].toLowerCase())
+  const requested = [...source.matchAll(/^(?:`{3,}|~{3,})\s*([\w#+.-]+)/gm)].map((match) => languageAliases[match[1].toLowerCase()] ?? match[1].toLowerCase())
   const loaded = new Set(highlighter.getLoadedLanguages())
   await Promise.all([...new Set(requested)].filter((language) => !loaded.has(language)).map(async (language) => {
     try { await highlighter.loadLanguage(language) } catch { /* Unknown languages render as plain code. */ }
@@ -72,16 +72,16 @@ async function getParser() {
 
 export async function renderMarkdown(source: string): Promise<{ html: string; headings: Heading[] }> {
   slugCounts.clear()
-  const languages = await loadLanguages(source)
+  await loadLanguages(source)
   const parser = await getParser()
   const rendered = parser.render(source)
   const container = document.createElement('div')
   container.innerHTML = DOMPurify.sanitize(rendered, { USE_PROFILES: { html: true }, ADD_ATTR: ['target', 'rel', 'checked', 'disabled'] })
-  const codeLanguages = languages.filter((language) => !['mermaid', 'uml'].includes(language))
-  container.querySelectorAll('pre').forEach((pre, index) => {
+  container.querySelectorAll('pre').forEach((pre) => {
     const wrapper = document.createElement('div'); wrapper.className = 'code-block'
     const toolbar = document.createElement('div'); toolbar.className = 'code-toolbar'
-    const label = document.createElement('span'); label.textContent = codeLanguages[index] || 'text'
+    const languageClass = [...(pre.querySelector('code')?.classList ?? [])].find((name) => name.startsWith('language-'))
+    const label = document.createElement('span'); label.textContent = languageClass?.slice('language-'.length) || 'text'
     const button = document.createElement('button'); button.type = 'button'; button.className = 'copy-code'; button.dataset.copyCode = ''; button.setAttribute('aria-label', 'Sao chép code'); button.textContent = 'Sao chép'
     toolbar.append(label, button)
     pre.parentNode?.insertBefore(wrapper, pre)

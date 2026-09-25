@@ -45,6 +45,14 @@ describe('Markdown rendering', () => {
     expect(result.html).toContain('--shiki-dark')
   })
 
+  it('keeps code labels aligned and supports tilde fences', async () => {
+    const result = await renderMarkdown('```php\necho 1;\n```\n\n```\nplain\n```\n\n~~~javascript\nconst ok = true\n~~~')
+    const container = document.createElement('div')
+    container.innerHTML = result.html
+    const labels = [...container.querySelectorAll('.code-toolbar span')].map((node) => node.textContent)
+    expect(labels).toEqual(['php', 'text', 'javascript'])
+  })
+
   it('preserves Mermaid and UML fences for the diagram renderer', async () => {
     const result = await renderMarkdown('```mermaid\nflowchart LR\n A --> B\n```\n\n```uml\nclassDiagram\n A <|-- B\n```')
     expect(result.html.match(/class="mermaid"/g)).toHaveLength(2)

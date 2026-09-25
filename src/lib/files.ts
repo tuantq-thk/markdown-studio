@@ -23,7 +23,7 @@ export async function filesToDocuments(files: File[], targetFolder = ''): Promis
     }
     return true
   })
-  const documents = await Promise.all(accepted.map(async (file) => {
+  const results = await Promise.allSettled(accepted.map(async (file) => {
     const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
     const path = relativePath.includes('/') ? relativePath : [targetFolder, file.name].filter(Boolean).join('/')
     return {
@@ -33,5 +33,10 @@ export async function filesToDocuments(files: File[], targetFolder = ''): Promis
     content: await readText(file),
     updatedAt: Date.now(),
   }}))
+  const documents: DocumentRecord[] = []
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled') documents.push(result.value)
+    else rejected.push(accepted[index].name)
+  })
   return { documents, rejected }
 }

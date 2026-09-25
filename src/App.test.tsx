@@ -80,4 +80,30 @@ describe('Markdown Studio', () => {
     await userEvent.click(screen.getByRole('button', { name: 'welcome.md' }))
     expect(HTMLElement.prototype.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'auto' })
   })
+
+  it('enters and exits full-page reading mode', async () => {
+    const { container } = render(<App />)
+    await screen.findByRole('heading', { name: 'Chào mừng đến Markdown Studio' }, { timeout: 5000 })
+    await userEvent.click(screen.getByRole('button', { name: 'Chế độ đọc toàn trang' }))
+    expect(container.firstElementChild).toHaveClass('reading-mode')
+    expect(screen.getByRole('button', { name: 'Thoát chế độ đọc toàn trang' })).toBeInTheDocument()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(container.firstElementChild).not.toHaveClass('reading-mode')
+  })
+
+  it('keeps independent autosave timers for edits across documents', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValue('Notes')
+    render(<App />)
+    await screen.findByRole('heading', { name: 'Chào mừng đến Markdown Studio' }, { timeout: 5000 })
+    await userEvent.click(screen.getByRole('button', { name: 'Editor' }))
+    fireEvent.change(screen.getByLabelText('Nội dung Markdown'), { target: { value: '# File đầu tiên đã sửa' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo thư mục' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Tạo tài liệu' }))
+    fireEvent.change(screen.getByLabelText('Nội dung Markdown'), { target: { value: '# File thứ hai đã sửa' } })
+    await waitFor(async () => {
+      const stored = await getDocuments()
+      expect(stored.some((document) => document.content === '# File đầu tiên đã sửa')).toBe(true)
+      expect(stored.some((document) => document.content === '# File thứ hai đã sửa')).toBe(true)
+    }, { timeout: 2500 })
+  })
 })

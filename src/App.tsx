@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDownToLine, ArrowUp, BookOpen, Check, ChevronLeft, ChevronRight, FilePlus2, Files, FolderPlus, Menu, Moon, PanelLeftClose, PanelRightClose, Plus, Search, Sun, Trash2, Upload, X } from 'lucide-react'
+import { ArrowDownToLine, ArrowUp, BookOpen, Check, ChevronLeft, ChevronRight, FilePlus2, Files, FolderPlus, Maximize2, Menu, Minimize2, Moon, PanelLeftClose, PanelRightClose, Plus, Search, Sun, Trash2, Upload, X } from 'lucide-react'
 import type { DocumentRecord, Heading } from './types'
 import { deleteDocument, getActiveId, getDocuments, getFolders, saveActiveId, saveDocument, saveDocuments, saveFolders } from './lib/storage'
 import { filesToDocuments } from './lib/files'
@@ -63,18 +63,28 @@ sequenceDiagram
 
 const folderOf = (path: string) => path.split('/').slice(0, -1).join('/')
 const createDocument = (folder = '', name = 'welcome.md', content = WELCOME): DocumentRecord => ({ id: crypto.randomUUID(), name, path: [folder, name].filter(Boolean).join('/'), content, updatedAt: Date.now() })
+const storedSet = (key: string) => {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || '[]')
+    return new Set<string>(Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [])
+  } catch { return new Set<string>() }
+}
+const storedTheme = (): 'light' | 'dark' => {
+  const value = localStorage.getItem('theme')
+  return value === 'light' || value === 'dark' ? value : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+}
 
 export default function App() {
   const [documents, setDocuments] = useState<DocumentRecord[]>([])
   const [folders, setFolders] = useState<string[]>([])
   const [activeId, setActiveId] = useState('')
   const [selectedFolder, setSelectedFolder] = useState('')
-  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => new Set(JSON.parse(localStorage.getItem('collapsedFolders') || '[]')))
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => storedSet('collapsedFolders'))
   const [html, setHtml] = useState('')
   const [headings, setHeadings] = useState<Heading[]>([])
   const [activeHeading, setActiveHeading] = useState('')
   const [mode, setMode] = useState<'editor' | 'preview'>('preview')
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('theme') as 'light' | 'dark') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'))
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => storedTheme())
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [tocOpen, setTocOpen] = useState(true)
   const [mobileLibrary, setMobileLibrary] = useState(false)
@@ -82,8 +92,10 @@ export default function App() {
   const [notice, setNotice] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const [readingProgress, setReadingProgress] = useState(0)
+  const [readingMode, setReadingMode] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
-  const saveTimer = useRef<number | undefined>(undefined)
+  const saveTimers = useRef(new Map<string, number>())
+  const noticeTimer = useRef<number | undefined>(undefined)
   const previewRef = useRef<HTMLElement>(null)
   const tocRef = useRef<HTMLElement>(null)
   const active = documents.find((document) => document.id === activeId)
@@ -101,7 +113,10 @@ export default function App() {
 
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('theme', theme) }, [theme])
   useEffect(() => { localStorage.setItem('collapsedFolders', JSON.stringify([...collapsedFolders])) }, [collapsedFolders])
-  useEffect(() => () => window.clearTimeout(saveTimer.current), [])
+  useEffect(() => () => {
+    saveTimers.current.forEach((timer) => window.clearTimeout(timer))
+    window.clearTimeout(noticeTimer.current)
+  }, [])
   useEffect(() => {
     let canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]')
     if (!canonical) { canonical = document.createElement('link'); canonical.rel = 'canonical'; document.head.append(canonical) }
@@ -145,15 +160,23 @@ export default function App() {
     previewRef.current?.scrollTo?.({ top: 0, behavior: 'auto' })
   }, [activeId])
 
-  const notify = (message: string, duration = 1800) => { setNotice(message); window.setTimeout(() => setNotice(''), duration) }
+  const notify = useCallback((message: string, duration = 1800) => {
+    window.clearTimeout(noticeTimer.current)
+    setNotice(message)
+    noticeTimer.current = window.setTimeout(() => setNotice(''), duration)
+  }, [])
   const selectDocument = useCallback((id: string) => { previewRef.current?.scrollTo?.({ top: 0, behavior: 'auto' }); setActiveId(id); setMobileLibrary(false); setReadingProgress(0); void saveActiveId(id) }, [])
 
   const updateContent = (content: string) => {
     if (!active) return
     const next = { ...active, content, updatedAt: Date.now() }
     setDocuments((items) => items.map((item) => item.id === active.id ? next : item))
-    window.clearTimeout(saveTimer.current)
-    saveTimer.current = window.setTimeout(() => { void saveDocument(next); notify('Đã lưu trên thiết bị') }, 450)
+    window.clearTimeout(saveTimers.current.get(active.id))
+    const timer = window.setTimeout(() => {
+      saveTimers.current.delete(active.id)
+      void saveDocument(next).then(() => notify('Đã lưu trên thiết bị')).catch(() => notify('Không thể lưu. Hãy tải file để tránh mất dữ liệu.', 3500))
+    }, 450)
+    saveTimers.current.set(active.id, timer)
   }
 
   const importFiles = useCallback(async (list: FileList | File[]) => {
@@ -166,7 +189,7 @@ export default function App() {
       setDocuments((current) => [...imported, ...current]); selectDocument(imported[0].id); notify(`Đã nhập ${imported.length} tài liệu`)
     }
     if (rejected.length) notify(`Bỏ qua ${rejected.length} file không hợp lệ hoặc quá 2 MB`, 2800)
-  }, [folders, selectedFolder, selectDocument])
+  }, [folders, notify, selectedFolder, selectDocument])
 
   const addFolder = async () => {
     const name = prompt('Tên thư mục mới:')?.trim().replace(/^\/+|\/+$/g, '')
@@ -190,6 +213,7 @@ export default function App() {
 
   const removeActive = async () => {
     if (!active || !confirm(`Xóa “${active.name}” khỏi thiết bị?`)) return
+    window.clearTimeout(saveTimers.current.get(active.id)); saveTimers.current.delete(active.id)
     await deleteDocument(active.id)
     const remaining = documents.filter((item) => item.id !== active.id)
     if (remaining.length) { setDocuments(remaining); selectDocument(remaining[0].id) }
@@ -200,29 +224,41 @@ export default function App() {
     if (!active) return
     const url = URL.createObjectURL(new Blob([active.content], { type: 'text/markdown;charset=utf-8' }))
     const link = document.createElement('a'); link.href = url; link.download = active.name; link.click(); URL.revokeObjectURL(url); notify('Đã tải file Markdown')
-  }, [active])
+  }, [active, notify])
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && readingMode) { setReadingMode(false); return }
       if (!(event.ctrlKey || event.metaKey)) return
       if (event.key.toLowerCase() === 's') { event.preventDefault(); downloadActive() }
       if (event.key.toLowerCase() === 'o') { event.preventDefault(); fileInput.current?.click() }
       if (event.shiftKey && event.key.toLowerCase() === 'p') { event.preventDefault(); setMode((value) => value === 'preview' ? 'editor' : 'preview') }
+      if (event.shiftKey && event.key.toLowerCase() === 'f') { event.preventDefault(); setMode('preview'); setReadingMode((value) => !value) }
     }
     window.addEventListener('keydown', handler); return () => window.removeEventListener('keydown', handler)
-  }, [downloadActive])
+  }, [downloadActive, readingMode])
 
   const onPreviewClick = async (event: React.MouseEvent<HTMLElement>) => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-copy-code]')
     if (!button) return
     const code = button.closest('.code-block')?.querySelector('code')?.textContent ?? ''
-    await navigator.clipboard.writeText(code); button.textContent = 'Đã chép'; notify('Đã sao chép code'); window.setTimeout(() => { button.textContent = 'Sao chép' }, 1500)
+    try {
+      await navigator.clipboard.writeText(code); button.textContent = 'Đã chép'; notify('Đã sao chép code'); window.setTimeout(() => { button.textContent = 'Sao chép' }, 1500)
+    } catch { notify('Trình duyệt không cho phép sao chép tự động', 2800) }
   }
 
   const filtered = useMemo(() => documents.filter((document) => document.name.toLowerCase().includes(query.toLowerCase()) || document.path.toLowerCase().includes(query.toLowerCase())), [documents, query])
-  const updateProgress = () => { const root = previewRef.current; if (!root) return; const max = root.scrollHeight - root.clientHeight; setReadingProgress(max > 0 ? Math.min(100, root.scrollTop / max * 100) : 0) }
+  const updateReadingState = () => {
+    const root = previewRef.current
+    if (!root) return
+    const max = root.scrollHeight - root.clientHeight
+    setReadingProgress(max > 0 ? Math.min(100, root.scrollTop / max * 100) : 0)
+    const nodes = [...root.querySelectorAll<HTMLElement>('h1,h2,h3')]
+    const current = nodes.reduce<HTMLElement | undefined>((found, node) => node.offsetTop <= root.scrollTop + 48 ? node : found, nodes[0])
+    if (current?.id) setActiveHeading(current.id)
+  }
 
-  return <div className="app" onDragEnter={(event) => { event.preventDefault(); setIsDragging(true) }} onDragOver={(event) => event.preventDefault()} onDragLeave={(event) => { if (event.currentTarget === event.target) setIsDragging(false) }} onDrop={(event) => { event.preventDefault(); setIsDragging(false); void importFiles(event.dataTransfer.files) }}>
+  return <div className={`app ${readingMode ? 'reading-mode' : ''}`} onDragEnter={(event) => { event.preventDefault(); setIsDragging(true) }} onDragOver={(event) => event.preventDefault()} onDragLeave={(event) => { if (event.currentTarget === event.target) setIsDragging(false) }} onDrop={(event) => { event.preventDefault(); setIsDragging(false); void importFiles(event.dataTransfer.files) }}>
     <div className="reading-progress" style={{ width: `${readingProgress}%` }} />
     <header className="topbar">
       <div className="brand"><button className="icon-button mobile-only" onClick={() => setMobileLibrary(true)} aria-label="Mở thư viện"><Menu /></button><div className="brand-mark">M↓</div><span>Markdown Studio</span></div>
@@ -244,14 +280,15 @@ export default function App() {
       <main className="main-panel">
         <div className="document-toolbar"><button className="icon-button desktop-only" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label="Ẩn hiện thư viện">{sidebarOpen ? <PanelLeftClose /> : <ChevronRight />}</button><div className="path"><BookOpen /> {active?.path ?? ''}</div>
           <select className="folder-select" aria-label="Chuyển tài liệu vào thư mục" value={active ? folderOf(active.path) : ''} onChange={(event) => void moveActive(event.target.value)}><option value="">Thư mục gốc</option>{folders.map((folder) => <option key={folder} value={folder}>{folder}</option>)}</select>
-          <button className="icon-button" onClick={downloadActive} aria-label="Tải file về máy" title="Tải file về máy (Ctrl/⌘ S)"><ArrowDownToLine /></button><button className="icon-button danger" onClick={() => void removeActive()} aria-label="Xóa tài liệu"><Trash2 /></button><button className="icon-button desktop-only" onClick={() => setTocOpen(!tocOpen)} aria-label="Ẩn hiện mục lục">{tocOpen ? <PanelRightClose /> : <ChevronLeft />}</button>
+          <button className="icon-button" onClick={downloadActive} aria-label="Tải file về máy" title="Tải file về máy (Ctrl/⌘ S)"><ArrowDownToLine /></button><button className="icon-button" onClick={() => { setMode('preview'); setReadingMode(true) }} aria-label="Chế độ đọc toàn trang" title="Đọc toàn trang (Ctrl/⌘ ⇧ F)"><Maximize2 /></button><button className="icon-button danger" onClick={() => void removeActive()} aria-label="Xóa tài liệu"><Trash2 /></button><button className="icon-button desktop-only" onClick={() => setTocOpen(!tocOpen)} aria-label="Ẩn hiện mục lục">{tocOpen ? <PanelRightClose /> : <ChevronLeft />}</button>
         </div>
-        {mode === 'editor' ? <textarea className="editor" aria-label="Nội dung Markdown" spellCheck={false} value={active?.content ?? ''} onChange={(event) => updateContent(event.target.value)} /> : <article ref={previewRef} className="preview markdown-body" onScroll={updateProgress} onClick={(event) => void onPreviewClick(event)} dangerouslySetInnerHTML={{ __html: html }} />}
-        <div className="shortcut-hints"><span><kbd>⌘/Ctrl S</kbd> tải file</span><span><kbd>⌘/Ctrl O</kbd> mở file</span><span><kbd>⌘/Ctrl ⇧ P</kbd> đổi chế độ</span></div>
+        {mode === 'editor' ? <textarea className="editor" aria-label="Nội dung Markdown" spellCheck={false} value={active?.content ?? ''} onChange={(event) => updateContent(event.target.value)} /> : <article ref={previewRef} className="preview markdown-body" onScroll={updateReadingState} onClick={(event) => void onPreviewClick(event)} dangerouslySetInnerHTML={{ __html: html }} />}
+        <div className="shortcut-hints"><span><kbd>⌘/Ctrl S</kbd> tải file</span><span><kbd>⌘/Ctrl O</kbd> mở file</span><span><kbd>⌘/Ctrl ⇧ P</kbd> đổi chế độ</span><span><kbd>⌘/Ctrl ⇧ F</kbd> đọc toàn trang</span></div>
         {mode === 'preview' && readingProgress > 12 && <button className="back-to-top" onClick={() => previewRef.current?.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="Lên đầu trang" title="Lên đầu trang"><ArrowUp /></button>}
+        {readingMode && <button className="exit-reading" onClick={() => setReadingMode(false)} aria-label="Thoát chế độ đọc toàn trang" title="Thoát (Esc)"><Minimize2 /><span>Thoát chế độ đọc</span></button>}
       </main>
 
-      <aside ref={tocRef} className="toc"><span className="eyebrow">TRONG TRANG NÀY</span>{headings.length ? <nav>{headings.map((heading) => <a key={heading.id} data-toc-id={heading.id} className={`${heading.id === activeHeading ? 'active ' : ''}toc-level-${heading.level}`} href={`#${heading.id}`} onClick={(event) => { event.preventDefault(); previewRef.current?.querySelector(`#${CSS.escape(heading.id)}`)?.scrollIntoView({ behavior: 'smooth' }) }}>{heading.text}</a>)}</nav> : <p className="toc-empty">Thêm tiêu đề để tạo mục lục.</p>}<div className="toc-progress"><span>{Math.round(readingProgress)}%</span><small>Đã đọc</small></div></aside>
+      <aside ref={tocRef} className="toc"><span className="eyebrow">TRONG TRANG NÀY</span>{headings.length ? <nav>{headings.map((heading) => <a key={heading.id} data-toc-id={heading.id} className={`${heading.id === activeHeading ? 'active ' : ''}toc-level-${heading.level}`} href={`#${heading.id}`} onClick={(event) => { event.preventDefault(); const root = previewRef.current; const target = root?.querySelector<HTMLElement>(`#${CSS.escape(heading.id)}`); if (root && target) root.scrollTo({ top: Math.max(0, target.offsetTop - 20), behavior: 'smooth' }) }}>{heading.text}</a>)}</nav> : <p className="toc-empty">Thêm tiêu đề để tạo mục lục.</p>}<div className="toc-progress"><span>{Math.round(readingProgress)}%</span><small>Đã đọc</small></div></aside>
     </div>
     {mobileLibrary && <button className="backdrop" onClick={() => setMobileLibrary(false)} aria-label="Đóng thư viện" />}
     {isDragging && <div className="drop-overlay"><div><FilePlus2 /><strong>Thả file Markdown vào đây</strong><span>Nhập vào {selectedFolder || 'thư mục gốc'} • tối đa 2 MB/file</span></div></div>}

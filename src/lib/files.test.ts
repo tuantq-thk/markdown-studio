@@ -28,4 +28,14 @@ describe('file import', () => {
     expect(result.documents).toHaveLength(0)
     expect(result.rejected).toEqual(['huge.md'])
   })
+
+  it('keeps importing other files when one file cannot be read', async () => {
+    vi.stubGlobal('crypto', { randomUUID: () => 'readable-document' })
+    const unreadable = new File(['broken'], 'broken.md')
+    Object.defineProperty(unreadable, 'text', { value: () => Promise.reject(new Error('read failed')) })
+    const result = await filesToDocuments([unreadable, new File(['# Good'], 'good.md')])
+    expect(result.documents).toHaveLength(1)
+    expect(result.documents[0].name).toBe('good.md')
+    expect(result.rejected).toContain('broken.md')
+  })
 })

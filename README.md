@@ -71,6 +71,7 @@ classDiagram
 - Nút trở về đầu trang.
 - Scrollbar mỏng, dark/light mode và responsive trên desktop/mobile.
 - Khi chuyển tài liệu, preview trở về đầu trang và tiến trình đặt lại `0%`.
+- Chế độ đọc toàn trang ẩn toàn bộ sidebar, TOC và toolbar để tập trung vào nội dung; nhấn `Esc` để thoát.
 
 ### Phím tắt
 
@@ -79,6 +80,7 @@ classDiagram
 | `Ctrl/⌘ + S` | Tải tài liệu hiện tại về máy |
 | `Ctrl/⌘ + O` | Mở hộp chọn file |
 | `Ctrl/⌘ + Shift + P` | Chuyển giữa Editor và Preview |
+| `Ctrl/⌘ + Shift + F` | Bật/tắt chế độ đọc toàn trang |
 
 ## Cách sử dụng
 

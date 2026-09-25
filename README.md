@@ -17,19 +17,22 @@ Markdown Studio là ứng dụng đọc, chỉnh sửa và tổ chức tài li�
 
 - Tạo tài liệu mới trong thư mục đang chọn.
 - Import hoặc kéo thả nhiều file `.md`, `.markdown`, `.mdown`.
+- Import nguyên cây thư mục bằng `showDirectoryPicker()` trên Chrome/Edge.
 - File import được đưa vào thư mục đang chọn; đường dẫn tương đối có sẵn được giữ lại.
 - Tạo thư mục nhiều cấp, chọn thư mục đích và chuyển tài liệu giữa các thư mục.
 - Thu gọn từng thư mục hoặc toàn bộ thư mục gốc.
-- Đổi tên file/thư mục, xóa cả cây thư mục và chặn thao tác tạo đường dẫn trùng.
-- Tìm theo tên file hoặc đường dẫn.
+- Đổi tên file/thư mục, chuyển file hoặc cả cây thư mục vào thùng rác và chặn đường dẫn trùng.
+- Tìm full-text theo tên, đường dẫn và nội dung bằng Web Worker; kết quả có xếp hạng và snippet theo mô hình RAG-lite cục bộ.
 - Giới hạn 2 MB/file để tránh làm treo tab trình duyệt.
-- Backup/restore toàn bộ workspace bằng JSON có version và validation.
+- Sidebar được virtualize, vẫn cuộn mượt khi workspace có hàng nghìn tài liệu.
+- Backup/restore workspace bằng ZIP hoặc JSON có version và validation.
+- ZIP chứa `workspace.json`, từng file Markdown và ảnh data-URL được nhúng trong tài liệu.
 
 ### Markdown và code
 
 - CommonMark cùng bảng, strikethrough, autolink, task list và footnote.
 - Raw HTML bị vô hiệu hóa; HTML kết quả tiếp tục được sanitize bằng DOMPurify.
-- Shiki tải grammar theo nhu cầu và hỗ trợ các ngôn ngữ đi kèm Shiki như PHP, Blade, JavaScript, TypeScript, Python, Java, Go, Rust, SQL, Bash, JSON, YAML, HTML, CSS, Vue, JSX/TSX và nhiều ngôn ngữ khác.
+- Shiki chạy trong Web Worker và chỉ đóng gói nhóm grammar phổ biến: PHP, JavaScript/TypeScript, Python, Ruby, Java, C/C++, C#, Go, Rust, SQL, Bash, JSON, YAML, HTML, CSS/SCSS, Vue, JSX/TSX, Markdown, Docker và Diff.
 - Code block có nhãn ngôn ngữ, theme sáng/tối theo từng token và nút sao chép.
 - Ngôn ngữ không nhận diện được sẽ hiển thị như plain code thay vì làm hỏng preview.
 
@@ -64,25 +67,31 @@ classDiagram
 
 `uml` sử dụng cú pháp Mermaid. PlantUML server không được gọi vì ứng dụng ưu tiên chạy offline và không làm rò rỉ nội dung sơ đồ.
 
+Mermaid syntax được parse/validate trong Web Worker. Bước layout và tạo SVG dùng Mermaid browser renderer khi cần, sau đó SVG được chuyển vào iframe `sandbox` riêng để cách ly DOM/style khỏi trang tài liệu.
+
 ### Trải nghiệm đọc
 
 - TOC sinh từ `h1`–`h3`, xử lý heading tiếng Việt và heading trùng.
 - Heading đang đọc được active bằng `IntersectionObserver`.
 - TOC tự cuộn để giữ heading active trong vùng nhìn thấy.
+- TOC có vùng cuộn riêng và progress cố định ở đáy, không tràn khỏi màn hình với tài liệu dài.
 - Thanh tiến trình đọc nằm ngay dưới topbar.
 - Nút trở về đầu trang.
 - Scrollbar mỏng, dark/light mode và responsive trên desktop/mobile.
 - Khi chuyển tài liệu, preview trở về đầu trang và tiến trình đặt lại `0%`.
 - Chế độ đọc toàn trang ẩn toàn bộ sidebar, TOC và toolbar để tập trung vào nội dung; nhấn `Esc` để thoát.
 - Sidebar và TOC có thể kéo thay đổi độ rộng; kích thước được ghi nhớ trên thiết bị.
-- Command palette mở bằng `Ctrl/⌘ + K` để tìm file, đổi theme, backup và bật chế độ đọc.
+- Command palette mở bằng `Ctrl/⌘ + K`; hỗ trợ tìm file và điều khiển hoàn toàn bằng `↑`, `↓`, `Enter`, `Esc`.
 - Ảnh HTTP/HTTPS trong Markdown bị chặn mặc định để tránh request ngoài ý muốn; có thể bật theo phiên làm việc.
 
 ### Offline và phục hồi
 
 - Web App Manifest và service worker cho phép cài đặt như PWA và mở lại sau khi tài nguyên đã được cache.
 - Khi IndexedDB không khả dụng hoặc hết quota, app hiển thị recovery banner và nút backup ngay.
-- Mermaid và bộ render Markdown/Shiki được tải theo nhu cầu; Mermaid chỉ tải khi tài liệu thật sự có diagram.
+- Dashboard dung lượng dùng Storage Estimate API và cảnh báo khi workspace đạt từ 80% quota.
+- Khi service worker cài xong phiên bản mới, app hiển thị banner **Cập nhật ngay** thay vì âm thầm reload.
+- IndexedDB migration chạy tuần tự qua version 1–3, bảo toàn documents/meta và bổ sung trash/history.
+- Mỗi tài liệu giữ tối đa 20 autosave snapshot để khôi phục nội dung bị ghi đè.
 
 ### Phím tắt
 
@@ -94,15 +103,26 @@ classDiagram
 | `Ctrl/⌘ + Shift + F` | Bật/tắt chế độ đọc toàn trang |
 | `Ctrl/⌘ + K` | Mở/đóng command palette |
 
+Trong command palette: `↑`/`↓` đổi lựa chọn, `Enter` thực thi và `Esc` đóng.
+
 ## Cách sử dụng
 
 ### Bắt đầu nhanh
 
 1. Mở ứng dụng; `welcome.md` được tạo trong lần sử dụng đầu tiên.
-2. Chọn **Nhập file** hoặc kéo file Markdown vào cửa sổ.
+2. Chọn **Mở file**, **Nhập thư mục** hoặc kéo file Markdown vào cửa sổ.
 3. Chọn một thư mục trước khi import nếu muốn nhóm file ngay từ đầu.
 4. Chọn **Editor** để chỉnh sửa và **Preview** để đọc kết quả.
-5. Dùng nút download hoặc `Ctrl/⌘ + S` để lưu file đã chỉnh sửa về máy.
+5. Trên Chrome/Edge, nút **Save** ghi trực tiếp qua File System Access API. Trình duyệt không hỗ trợ sẽ fallback sang download.
+
+### Thùng rác và lịch sử
+
+1. Nút xóa chuyển tài liệu hoặc toàn bộ folder vào thùng rác, không xóa vĩnh viễn ngay.
+2. Nhấn **Hoàn tác** trên thông báo hoặc mở **Thùng rác** trong sidebar để khôi phục.
+3. Dùng nút folder trong thùng rác để khôi phục đồng loạt toàn bộ tài liệu con.
+4. Chỉ nút xóa trong cửa sổ thùng rác mới xóa vĩnh viễn.
+5. Nhấn biểu tượng lịch sử trên toolbar để xem tối đa 20 snapshot của file hiện tại.
+6. Khi restore snapshot, nội dung hiện tại được lưu thành một snapshot khác trước khi thay thế.
 
 ### Tổ chức workspace
 
@@ -152,14 +172,15 @@ Paste / Create / Import / Drop
 
 1. Người dùng nhập trong editor.
 2. React state cập nhật ngay để preview phản hồi nhanh.
-3. Sau 450 ms không có thay đổi mới, document được ghi vào IndexedDB.
-4. Tài liệu vẫn chỉ tồn tại trong browser profile hiện tại cho đến khi người dùng tải file về máy.
+3. Sau 450 ms không có thay đổi mới, document được ghi vào IndexedDB và nội dung trước đợt sửa được lưu vào history.
+4. History được giới hạn 20 phiên bản/file để kiểm soát dung lượng.
+5. Tài liệu vẫn chỉ tồn tại trong browser profile hiện tại cho đến khi người dùng Save/download/backup.
 
 ### Backup và restore workspace
 
-1. Nhấn **Backup** trong sidebar để tải file `markdown-studio-backup-YYYY-MM-DD.json`.
-2. Backup chứa documents, folders, active document và các setting giao diện; không chứa executable code.
-3. Nhấn **Restore**, chọn đúng file JSON và xác nhận thay thế workspace hiện tại.
+1. Nhấn **Backup ZIP** để tải `markdown-studio-backup-YYYY-MM-DD.zip`.
+2. ZIP chứa `workspace.json`, thư mục `documents/`, ảnh data-URL trong `assets/` và file hướng dẫn.
+3. Nhấn **Restore**, chọn ZIP mới hoặc JSON từ phiên bản cũ và xác nhận thay thế workspace.
 4. Restore kiểm tra version, cấu trúc document và đường dẫn trùng trước khi ghi transaction vào IndexedDB.
 
 > [!WARNING]
@@ -174,6 +195,8 @@ Database IndexedDB: `markdown-studio`.
 | `documents` | `DocumentRecord.id` | `id`, `name`, `path`, `content`, `updatedAt` |
 | `meta` | `activeId` | ID tài liệu mở gần nhất |
 | `meta` | `folders` | Danh sách đường dẫn thư mục |
+| `trash` | `DocumentRecord.id` | Document đã xóa cùng `deletedAt` |
+| `history` | Auto increment | Tối đa 20 snapshot cho mỗi document |
 
 `theme` và danh sách folder đang collapse được lưu trong `localStorage`.
 
@@ -188,18 +211,27 @@ Lưu ý:
 
 ```text
 markdown-studio/
-├── .github/workflows/deploy.yml   # Test, lint, build và deploy GitHub Pages
+├── .github/workflows/deploy.yml   # Unit, E2E, lint, build và deploy GitHub Pages
 ├── public/favicon.svg
 ├── src/
 │   ├── components/
 │   │   └── FolderTree.tsx         # Cây folder/file và collapse
 │   ├── lib/
 │   │   ├── diagrams.ts            # Mermaid/UML renderer
+│   │   ├── diagram-client.ts       # Giao tiếp Mermaid parser worker
 │   │   ├── files.ts               # Validate và đọc file import
+│   │   ├── highlight-client.ts     # Giao tiếp Shiki worker
+│   │   ├── highlighter.ts          # Shiki grammar/highlight engine
 │   │   ├── markdown.ts            # Markdown, Shiki, sanitize, TOC, code toolbar
+│   │   ├── search-client.ts       # Giao tiếp full-text search worker
+│   │   ├── search-engine.ts       # Index, ranking và snippet RAG-lite
 │   │   ├── storage.ts             # IndexedDB repository
 │   │   └── workspace.ts           # Backup/restore schema và validation
 │   ├── test/setup.ts
+│   ├── workers/
+│   │   ├── diagram.worker.ts
+│   │   ├── highlight.worker.ts
+│   │   └── search.worker.ts
 │   ├── App.tsx                    # Điều phối state và các user flow
 │   ├── main.tsx
 │   ├── styles.css
@@ -208,6 +240,8 @@ markdown-studio/
 ├── index.html                     # SEO metadata và application entry
 ├── public/manifest.webmanifest    # Metadata cài đặt PWA
 ├── public/sw.js                   # Offline runtime cache
+├── e2e/markdown-studio.spec.ts    # Playwright offline/restore/resize/Pages
+├── playwright.config.ts
 ├── package.json
 ├── vite.config.ts
 └── README.md
@@ -222,23 +256,26 @@ npm install
 npm run dev
 ```
 
+Các script luôn chỉ định trực tiếp `vite.config.ts`. Cấu hình này đặt `worker.format: 'es'` để Mermaid/Shiki Worker có thể code-split. Nếu cập nhật project bằng cách giải nén đè lên một bản cũ, hãy xóa `vite.config.js` và `vite.config.d.ts` còn sót lại; gói phát hành mới không chứa hai file này.
+
 ## Kiểm tra chất lượng
 
 ```bash
 npm run test
+npm run test:e2e
 npm run lint
 npm run build
 npm audit --omit=dev
 ```
 
-Test bao phủ import file, giới hạn dung lượng, folder path, IndexedDB, Markdown mở rộng, XSS, link ngoài, Shiki đa ngôn ngữ, Mermaid fence, code copy, phím tắt, tạo/collapse folder và download Markdown.
+Unit/integration test bao phủ import, IndexedDB migration, trash/history, backup ZIP, Markdown/XSS, Shiki, Mermaid, command palette và UI chính. Playwright kiểm tra offline PWA, restore, drag-resize và asset URL tương thích GitHub Pages.
 
 Build dùng dynamic import để tách Markdown/Shiki và Mermaid khỏi entry bundle. Grammar Shiki tiếp tục được tải riêng theo ngôn ngữ xuất hiện trong từng tài liệu.
 
 ## Deploy GitHub Pages
 
 1. Push project lên GitHub.
-2. Push vào `main`; workflow sẽ chạy test, lint, build rồi deploy thư mục `dist`.
+2. Push vào `main`; workflow cài Chromium, chạy unit/E2E test, lint, build rồi deploy thư mục `dist`.
 3. Workflow dùng `enablement: true` để tự bật Pages và chọn GitHub Actions làm nguồn ở lần deploy đầu tiên.
 
 Nếu bước **Configure GitHub Pages** vẫn báo `Not Found`, tài khoản chạy workflow không có quyền quản trị repository hoặc tổ chức đã chặn GitHub Pages. Khi đó, dùng tài khoản admin mở **Settings → Pages → Build and deployment → Source**, chọn **GitHub Actions**, rồi chạy lại workflow. Không đặt `ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION`; workflow đã dùng Node.js 24 và các action chạy trên runtime hiện hành.

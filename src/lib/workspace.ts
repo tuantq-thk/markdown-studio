@@ -53,3 +53,40 @@ export function downloadJson(value: unknown, filename: string) {
   link.click()
   URL.revokeObjectURL(url)
 }
+
+export async function createWorkspaceZip(backup: WorkspaceBackup): Promise<Blob> {
+  const { default: JSZip } = await import('jszip')
+  const zip = new JSZip()
+  zip.file('workspace.json', JSON.stringify(backup, null, 2))
+  const assets = zip.folder('assets')
+  backup.documents.forEach((document) => {
+    zip.file(`documents/${document.path}`, document.content)
+    let assetIndex = 0
+    for (const match of document.content.matchAll(/data:(image\/[a-zA-Z0-9.+-]+);base64,([a-zA-Z0-9+/=]+)/g)) {
+      const extension = match[1].split('/')[1].replace('svg+xml', 'svg')
+      assets?.file(`${document.id}-${++assetIndex}.${extension}`, match[2], { base64: true })
+    }
+  })
+  zip.file('README.txt', 'Markdown Studio workspace backup. Restore bằng nút Restore trong ứng dụng. Thư mục documents chứa bản Markdown dễ truy cập; assets chứa ảnh data URL được nhúng trong tài liệu.')
+  return zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } })
+}
+
+export async function parseWorkspaceFile(file: File): Promise<WorkspaceBackup> {
+  if (/\.zip$/i.test(file.name) || file.type === 'application/zip') {
+    const { default: JSZip } = await import('jszip')
+    const zip = await JSZip.loadAsync(file)
+    const workspace = zip.file('workspace.json')
+    if (!workspace) throw new Error('Missing workspace.json')
+    return parseWorkspaceBackup(await workspace.async('string'))
+  }
+  return parseWorkspaceBackup(await file.text())
+}
+
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createWorkspaceBackup, parseWorkspaceBackup } from './workspace'
+import JSZip from 'jszip'
+import { createWorkspaceBackup, createWorkspaceZip, parseWorkspaceBackup } from './workspace'
 
 const document = { id: 'doc-1', name: 'guide.md', path: 'Docs/guide.md', content: '# Guide', updatedAt: 1 }
 
@@ -15,5 +16,12 @@ describe('workspace backup', () => {
     expect(() => parseWorkspaceBackup('{}')).toThrow()
     const backup = createWorkspaceBackup({ documents: [document, { ...document, id: 'doc-2' }], folders: ['Docs'], settings: { theme: 'light', allowRemoteImages: false, sidebarWidth: 280, tocWidth: 230 } })
     expect(() => parseWorkspaceBackup(JSON.stringify(backup))).toThrow('duplicate')
+  })
+
+  it('creates a portable ZIP with workspace and Markdown files', async () => {
+    const backup = createWorkspaceBackup({ documents: [document], folders: ['Docs'], settings: { theme: 'light', allowRemoteImages: false, sidebarWidth: 280, tocWidth: 230 } })
+    const zip = await JSZip.loadAsync(await createWorkspaceZip(backup))
+    expect(zip.file('workspace.json')).not.toBeNull()
+    expect(await zip.file('documents/Docs/guide.md')?.async('string')).toBe('# Guide')
   })
 })

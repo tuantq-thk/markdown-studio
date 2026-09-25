@@ -1,3 +1,5 @@
+import { validateDiagramsInWorker } from './diagram-client'
+
 let sequence = 0
 
 export async function renderDiagrams(root: HTMLElement, theme: 'light' | 'dark'): Promise<number> {
@@ -12,15 +14,22 @@ export async function renderDiagrams(root: HTMLElement, theme: 'light' | 'dark')
     suppressErrorRendering: true,
   })
   let rendered = 0
-  for (const node of nodes) {
-    const definition = node.textContent ?? ''
+  const definitions = nodes.map((node) => node.textContent ?? '')
+  const valid = await validateDiagramsInWorker(definitions)
+  for (const [index, node] of nodes.entries()) {
+    const definition = definitions[index]
     try {
+      if (!valid[index]) throw new Error('Invalid diagram')
       const id = `mermaid-${Date.now()}-${sequence++}`
-      const { svg, bindFunctions } = await mermaid.render(id, definition)
-      node.innerHTML = svg
+      const { svg } = await mermaid.render(id, definition)
+      const iframe = document.createElement('iframe')
+      iframe.className = 'diagram-frame'
+      iframe.title = 'Sơ đồ Mermaid'
+      iframe.setAttribute('sandbox', '')
+      iframe.srcdoc = `<!doctype html><html><head><meta name="color-scheme" content="light dark"><style>html,body{margin:0;background:transparent;overflow:auto}body{display:grid;place-items:center;padding:8px;box-sizing:border-box}svg{display:block;max-width:100%;height:auto}</style></head><body>${svg}</body></html>`
+      node.replaceChildren(iframe)
       node.classList.add('diagram-rendered')
       node.removeAttribute('data-diagram')
-      bindFunctions?.(node)
       rendered++
     } catch {
       node.classList.add('diagram-error')

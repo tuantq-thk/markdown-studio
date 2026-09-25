@@ -35,7 +35,7 @@ describe('Markdown Studio', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Đổi giao diện' }))
     expect(document.documentElement.dataset.theme).toBe('dark')
     expect(screen.getByRole('button', { name: 'Tạo tài liệu' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Xóa tài liệu' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Chuyển vào thùng rác' })).toBeEnabled()
   })
 
   it('copies highlighted code and toggles mode with the keyboard shortcut', async () => {
@@ -113,7 +113,8 @@ describe('Markdown Studio', () => {
     fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
     const palette = screen.getByRole('dialog', { name: 'Bảng lệnh' })
     expect(palette).toBeInTheDocument()
-    await userEvent.click(within(palette).getByRole('button', { name: 'Đổi giao diện' }))
+    expect(within(palette).getByPlaceholderText('Tìm file hoặc lệnh…')).toHaveFocus()
+    await userEvent.keyboard('{ArrowDown}{Enter}')
     expect(document.documentElement.dataset.theme).toBe('dark')
     expect(screen.queryByRole('dialog', { name: 'Bảng lệnh' })).not.toBeInTheDocument()
   })
@@ -124,5 +125,15 @@ describe('Markdown Studio', () => {
     await screen.findByRole('heading', { name: 'Chào mừng đến Markdown Studio' }, { timeout: 5000 })
     await userEvent.click(screen.getByRole('button', { name: 'Đổi tên tài liệu' }))
     await waitFor(async () => expect((await getDocuments()).some((document) => document.path === 'renamed-guide.md')).toBe(true))
+  })
+
+  it('moves a document to trash and restores it with undo', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<App />)
+    await screen.findByRole('heading', { name: 'Chào mừng đến Markdown Studio' }, { timeout: 5000 })
+    await userEvent.click(screen.getByRole('button', { name: 'Chuyển vào thùng rác' }))
+    expect(await screen.findByRole('button', { name: 'Hoàn tác' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Hoàn tác' }))
+    await waitFor(async () => expect((await getDocuments()).some((document) => document.name === 'welcome.md')).toBe(true))
   })
 })

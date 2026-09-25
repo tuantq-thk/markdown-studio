@@ -15,7 +15,9 @@ describe('diagram rendering', () => {
     root.innerHTML = '<div class="mermaid" data-diagram="true">flowchart LR\nA--&gt;B</div>'
     await expect(renderDiagrams(root, 'dark')).resolves.toBe(1)
     expect(initialize).toHaveBeenCalledWith(expect.objectContaining({ securityLevel: 'strict', theme: 'dark' }))
-    expect(root.querySelector('svg')).not.toBeNull()
+    const frame = root.querySelector<HTMLIFrameElement>('iframe')
+    expect(frame).not.toBeNull()
+    expect(frame?.srcdoc).toContain('<svg aria-label="diagram"></svg>')
     expect(root.querySelector('.mermaid')).toHaveClass('diagram-rendered')
   })
 

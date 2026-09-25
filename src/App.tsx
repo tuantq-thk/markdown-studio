@@ -1,63 +1,92 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArchiveRestore, ArrowDownToLine, ArrowUp, BookOpen, Check, ChevronLeft, ChevronRight, Command, DatabaseBackup, FilePlus2, Files, FolderPen, FolderPlus, FolderX, Image, ImageOff, Maximize2, Menu, Minimize2, Moon, PanelLeftClose, PanelRightClose, Pencil, Plus, Search, Sun, Trash2, Upload, X } from 'lucide-react'
+import { ArchiveRestore, ArrowDownToLine, ArrowUp, BookOpen, Check, ChevronLeft, ChevronRight, Clock3, Command, DatabaseBackup, FilePlus2, Files, FolderInput, FolderPen, FolderPlus, FolderX, HardDrive, History, Image, ImageOff, Maximize2, Menu, Minimize2, Moon, PanelLeftClose, PanelRightClose, Pencil, Plus, RotateCcw, Save, Search, Sun, Trash2, Upload, X } from 'lucide-react'
 import type { DocumentRecord, Heading } from './types'
-import { deleteDocument, getActiveId, getDocuments, getFolders, replaceWorkspace, saveActiveId, saveDocument, saveDocuments, saveFolders } from './lib/storage'
+import { deleteDocument, getActiveId, getDocumentHistory, getDocuments, getFolders, getTrash, moveDocumentToTrash, replaceWorkspace, restoreTrashedDocument, saveActiveId, saveDocument, saveDocuments, saveDocumentWithHistory, saveFolders, type HistoryRecord, type TrashRecord } from './lib/storage'
 import { filesToDocuments } from './lib/files'
-import { createWorkspaceBackup, downloadJson, parseWorkspaceBackup } from './lib/workspace'
+import { createWorkspaceBackup, createWorkspaceZip, downloadBlob, parseWorkspaceFile } from './lib/workspace'
 import { FolderTree } from './components/FolderTree'
+import { indexWorkspace, searchWorkspace, type SearchHit } from './lib/search-client'
 
 const WELCOME = `# Chào mừng đến Markdown Studio
 
-Mọi nội dung được lưu **trên trình duyệt của bạn**. Hãy dán Markdown, chỉnh sửa trực tiếp hoặc kéo nhiều file \`.md\` vào cửa sổ.
+Markdown Studio là workspace đọc và chỉnh sửa Markdown chạy hoàn toàn trên trình duyệt. Hãy bắt đầu bằng **Mở file**, kéo thả nhiều file hoặc chuyển sang **Editor** để viết ngay.
 
-## Markdown đầy đủ
+> [!NOTE]
+> Tài liệu, thùng rác và lịch sử phiên bản được lưu trong IndexedDB của browser hiện tại. Hãy dùng **Backup ZIP** định kỳ cho nội dung quan trọng.
 
-- [x] Task list
-- Bảng, ~~gạch ngang~~, link tự động và footnote[^1]
-- Code block đa ngôn ngữ, tải grammar khi cần
+## Bắt đầu nhanh
 
-| Tính năng | Trạng thái |
-| --- | --- |
-| Lưu cục bộ | Sẵn sàng |
-| Tải file về máy | Sẵn sàng |
+1. Nhấn **Mở file** hoặc nút folder để nhập nguyên cây thư mục bằng File System Access API trên Chrome/Edge.
+2. Chọn **Editor** để chỉnh sửa và **Preview** để đọc kết quả.
+3. Nhấn biểu tượng **Save** để ghi trực tiếp vào file đã mở, hoặc biểu tượng download để tải một bản \`.md\`.
+4. Tạo folder, đổi tên, di chuyển và tìm full-text trong toàn bộ nội dung từ sidebar.
+5. Nhấn \`Ctrl/⌘ + K\` để mở command palette.
 
-## PHP / Laravel
+## Đọc tập trung
+
+- Nút mở rộng hoặc \`Ctrl/⌘ + Shift + F\` bật chế độ đọc toàn trang.
+- TOC có vùng cuộn riêng, tự active và tự cuộn theo heading đang đọc.
+- Thanh tiến trình và nút trở về đầu trang giúp theo dõi tài liệu dài.
+- Kéo mép sidebar/TOC để đổi độ rộng; app tự ghi nhớ kích thước.
+
+## Markdown, code và diagram
+
+- CommonMark, table, task list, ~~strikethrough~~, autolink và footnote[^1].
+- Shiki highlight nhiều ngôn ngữ trong Web Worker để giảm block giao diện.
+- Mermaid/UML được parse trong Worker và hiển thị SVG trong iframe sandbox cách ly.
+- Code block có nhãn ngôn ngữ và nút sao chép.
 
 \`\`\`php
 final class ArticleRepository
 {
     public function published(): Collection
     {
-        return Article::query()
-            ->with(['author', 'category'])
-            ->whereNotNull('published_at')
-            ->latest('published_at')
-            ->get();
+        return Article::query()->with(['author'])->latest()->get();
     }
 }
 \`\`\`
 
-## JavaScript
-
-\`\`\`javascript
-const articles = await fetch('/api/articles').then(response => response.json())
-\`\`\`
-
-## Mermaid / UML
-
 \`\`\`mermaid
-sequenceDiagram
-    participant U as User
-    participant M as Markdown Studio
-    U->>M: Import tài liệu
-    M-->>U: Preview + TOC + diagrams
+flowchart LR
+    A[Open or drop Markdown] --> B[Edit and autosave]
+    B --> C[Shiki + Mermaid workers]
+    C --> D[Focused reading]
 \`\`\`
 
-### Riêng tư theo mặc định
+## An toàn dữ liệu
 
-Ứng dụng không gửi tài liệu lên máy chủ. Bạn có thể dùng nó như một bàn đọc Markdown cá nhân.
+| Tính năng | Cách sử dụng |
+| --- | --- |
+| Autosave | Tự lưu sau khi ngừng gõ |
+| Lịch sử | Nhấn biểu tượng đồng hồ để xem tối đa 20 snapshot |
+| Thùng rác | Xóa file/folder rồi hoàn tác hoặc khôi phục sau |
+| Backup ZIP | Lưu workspace JSON, từng file Markdown và ảnh data-URL |
+| Restore | Chọn backup ZIP/JSON và xác nhận thay thế workspace |
+| Recovery | Khi IndexedDB lỗi, banner nhắc backup ngay |
+| Storage | Dashboard báo dung lượng và cảnh báo khi dùng từ 80% quota |
 
-[^1]: Footnote cũng được hỗ trợ.
+> [!WARNING]
+> Xóa vĩnh viễn trong thùng rác và restore workspace là thao tác không thể tự hoàn tác. Luôn tạo backup trước.
+
+## Quyền riêng tư và offline
+
+Ảnh HTTP/HTTPS bị chặn mặc định để tài liệu không âm thầm gửi request ra ngoài. Bật biểu tượng ảnh nếu bạn tin nguồn tài liệu. Sau lần tải đầu, PWA có thể mở offline; khi có phiên bản mới app sẽ hiện nút **Cập nhật ngay**.
+
+## Phím tắt
+
+| Phím | Tác dụng |
+| --- | --- |
+| \`Ctrl/⌘ + S\` | Tải file Markdown hiện tại |
+| \`Ctrl/⌘ + O\` | Mở file |
+| \`Ctrl/⌘ + Shift + P\` | Đổi Editor/Preview |
+| \`Ctrl/⌘ + Shift + F\` | Đọc toàn trang |
+| \`Ctrl/⌘ + K\` | Command palette; dùng ↑ ↓ Enter và Esc |
+
+### Lưu ý tương thích
+
+File System Access API cần Chrome/Edge trên HTTPS hoặc localhost. Safari/Firefox tự fallback sang tải file. Dữ liệu IndexedDB gắn với domain và browser profile.
+
+[^1]: Footnote được hiển thị cuối tài liệu.
 `
 
 const folderOf = (path: string) => path.split('/').slice(0, -1).join('/')
@@ -105,6 +134,8 @@ export default function App() {
   const [tocOpen, setTocOpen] = useState(true)
   const [mobileLibrary, setMobileLibrary] = useState(false)
   const [query, setQuery] = useState('')
+  const [searchHits, setSearchHits] = useState<SearchHit[]>([])
+  const [storageEstimate, setStorageEstimate] = useState({ usage: 0, quota: 0 })
   const [notice, setNotice] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const [readingProgress, setReadingProgress] = useState(0)
@@ -115,24 +146,34 @@ export default function App() {
   const [tocWidth, setTocWidth] = useState(() => storedNumber('tocWidth', 230, 190, 360))
   const [commandOpen, setCommandOpen] = useState(false)
   const [commandQuery, setCommandQuery] = useState('')
+  const [commandIndex, setCommandIndex] = useState(-1)
+  const [trash, setTrash] = useState<TrashRecord[]>([])
+  const [trashOpen, setTrashOpen] = useState(false)
+  const [history, setHistory] = useState<HistoryRecord[]>([])
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [lastTrashed, setLastTrashed] = useState<string[]>([])
+  const [pwaUpdate, setPwaUpdate] = useState<ServiceWorkerRegistration | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const restoreInput = useRef<HTMLInputElement>(null)
   const saveTimers = useRef(new Map<string, number>())
+  const historyBases = useRef(new Map<string, DocumentRecord>())
+  const fileHandles = useRef(new Map<string, FileSystemFileHandle>())
   const noticeTimer = useRef<number | undefined>(undefined)
   const previewRef = useRef<HTMLElement>(null)
   const tocRef = useRef<HTMLElement>(null)
+  const commandPaletteRef = useRef<HTMLElement>(null)
   const active = documents.find((document) => document.id === activeId)
 
   useEffect(() => { void (async () => {
     try {
-      const [stored, storedFolders] = await Promise.all([getDocuments(), getFolders()])
+      const [stored, storedFolders, storedTrash] = await Promise.all([getDocuments(), getFolders(), getTrash()])
       const docs = stored.length ? stored.sort((a, b) => b.updatedAt - a.updatedAt) : [createDocument()]
       if (!stored.length) await saveDocument(docs[0])
       const inferred = docs.map((doc) => folderOf(doc.path)).filter(Boolean)
       const allFolders = [...new Set([...storedFolders, ...inferred])].sort()
       if (allFolders.length !== storedFolders.length) await saveFolders(allFolders)
       const previous = await getActiveId()
-      setDocuments(docs); setFolders(allFolders); setActiveId(docs.some((item) => item.id === previous) ? previous! : docs[0].id)
+      setDocuments(docs); setFolders(allFolders); setTrash(storedTrash); setActiveId(docs.some((item) => item.id === previous) ? previous! : docs[0].id)
     } catch {
       const fallback = createDocument()
       setDocuments([fallback]); setActiveId(fallback.id); setStorageError('Không thể truy cập IndexedDB. Thay đổi trong phiên này có thể không được lưu.')
@@ -140,10 +181,32 @@ export default function App() {
   })() }, [])
 
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('theme', theme) }, [theme])
+  useEffect(() => {
+    const handler = (event: Event) => setPwaUpdate((event as CustomEvent<ServiceWorkerRegistration>).detail)
+    window.addEventListener('markdown-studio:update', handler); return () => window.removeEventListener('markdown-studio:update', handler)
+  }, [])
   useEffect(() => { localStorage.setItem('allowRemoteImages', String(allowRemoteImages)) }, [allowRemoteImages])
   useEffect(() => { localStorage.setItem('sidebarWidth', String(sidebarWidth)) }, [sidebarWidth])
   useEffect(() => { localStorage.setItem('tocWidth', String(tocWidth)) }, [tocWidth])
   useEffect(() => { localStorage.setItem('collapsedFolders', JSON.stringify([...collapsedFolders])) }, [collapsedFolders])
+  useEffect(() => { indexWorkspace(documents) }, [documents])
+  useEffect(() => {
+    let cancelled = false
+    const value = query.trim()
+    if (!value) { setSearchHits([]); return }
+    const timer = window.setTimeout(() => {
+      if (typeof Worker === 'undefined') {
+        const normalized = value.toLowerCase()
+        setSearchHits(documents.filter((item) => `${item.name} ${item.path} ${item.content}`.toLowerCase().includes(normalized)).map((item) => ({ id: item.id, score: 1, snippet: item.content.slice(0, 150).replace(/\s+/g, ' ') })))
+      } else void searchWorkspace(value).then((results) => { if (!cancelled) setSearchHits(results) })
+    }, 120)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [documents, query])
+  useEffect(() => {
+    const update = () => void navigator.storage?.estimate?.().then(({ usage = 0, quota = 0 }) => setStorageEstimate({ usage, quota })).catch(() => undefined)
+    update(); const timer = window.setTimeout(update, 700)
+    return () => window.clearTimeout(timer)
+  }, [documents, trash, history])
   useEffect(() => () => {
     saveTimers.current.forEach((timer) => window.clearTimeout(timer))
     window.clearTimeout(noticeTimer.current)
@@ -201,11 +264,13 @@ export default function App() {
   const updateContent = (content: string) => {
     if (!active) return
     const next = { ...active, content, updatedAt: Date.now() }
+    if (!historyBases.current.has(active.id)) historyBases.current.set(active.id, active)
     setDocuments((items) => items.map((item) => item.id === active.id ? next : item))
     window.clearTimeout(saveTimers.current.get(active.id))
     const timer = window.setTimeout(() => {
       saveTimers.current.delete(active.id)
-      void saveDocument(next).then(() => notify('Đã lưu trên thiết bị')).catch(() => notify('Không thể lưu. Hãy tải file để tránh mất dữ liệu.', 3500))
+      const previous = historyBases.current.get(active.id); historyBases.current.delete(active.id)
+      void saveDocumentWithHistory(next, previous).then(() => notify('Đã lưu trên thiết bị')).catch(() => notify('Không thể lưu. Hãy tải file để tránh mất dữ liệu.', 3500))
     }, 450)
     saveTimers.current.set(active.id, timer)
   }
@@ -228,6 +293,27 @@ export default function App() {
     }
     if (rejected.length) notify(`Bỏ qua ${rejected.length} file không hợp lệ hoặc quá 2 MB`, 2800)
   }, [documents, folders, notify, selectedFolder, selectDocument])
+
+  const importDirectory = async () => {
+    if (!window.showDirectoryPicker) return notify('Trình duyệt chưa hỗ trợ mở thư mục. Hãy dùng Chrome/Edge trên HTTPS hoặc localhost.', 3800)
+    try {
+      const root = await window.showDirectoryPicker()
+      const files: File[] = []
+      const walk = async (directory: FileSystemDirectoryHandle, relative: string) => {
+        for await (const entry of directory.values()) {
+          if (entry.kind === 'directory') await walk(entry, `${relative}/${entry.name}`)
+          else if (/\.(md|markdown|mdown)$/i.test(entry.name)) {
+            const file = await entry.getFile()
+            Object.defineProperty(file, 'webkitRelativePath', { configurable: true, value: [selectedFolder, root.name, relative, entry.name].filter(Boolean).join('/') })
+            files.push(file)
+          }
+        }
+      }
+      await walk(root, '')
+      if (!files.length) return notify('Thư mục không có file Markdown', 2800)
+      await importFiles(files)
+    } catch (error) { if ((error as DOMException).name !== 'AbortError') notify('Không thể đọc thư mục đã chọn', 3000) }
+  }
 
   const addFolder = async () => {
     const name = prompt('Tên thư mục mới:')?.trim().replace(/^\/+|\/+$/g, '')
@@ -286,21 +372,23 @@ export default function App() {
     const affected = documents.filter((document) => document.path.startsWith(`${selectedFolder}/`))
     if (!confirm(`Xóa thư mục “${selectedFolder}” và ${affected.length} tài liệu bên trong?`)) return
     affected.forEach((document) => { window.clearTimeout(saveTimers.current.get(document.id)); saveTimers.current.delete(document.id) })
-    try { await Promise.all(affected.map((document) => deleteDocument(document.id))); const nextFolders = folders.filter((folder) => folder !== selectedFolder && !folder.startsWith(`${selectedFolder}/`)); await saveFolders(nextFolders); setFolders(nextFolders) } catch { setStorageError('Không thể xóa đầy đủ thư mục khỏi IndexedDB.') }
+    try { await Promise.all(affected.map((document) => moveDocumentToTrash(document))); const nextFolders = folders.filter((folder) => folder !== selectedFolder && !folder.startsWith(`${selectedFolder}/`)); await saveFolders(nextFolders); setFolders(nextFolders); setTrash((items) => [...affected.map((document) => ({ ...document, deletedAt: Date.now() })), ...items]); setLastTrashed(affected.map((document) => document.id)) } catch { setStorageError('Không thể chuyển đầy đủ thư mục vào thùng rác.') }
     const remaining = documents.filter((document) => !affected.some((item) => item.id === document.id))
     setDocuments(remaining); setSelectedFolder('')
     if (!remaining.length) { const fresh = createDocument('', 'untitled.md', '# Tài liệu mới\n'); setDocuments([fresh]); setActiveId(fresh.id); try { await saveDocument(fresh) } catch { setStorageError('Không thể tạo tài liệu thay thế.') } }
     else if (affected.some((document) => document.id === activeId)) selectDocument(remaining[0].id)
-    notify('Đã xóa thư mục')
+    notify('Đã chuyển thư mục vào thùng rác — có thể hoàn tác', 5000)
   }
 
   const removeActive = async () => {
-    if (!active || !confirm(`Xóa “${active.name}” khỏi thiết bị?`)) return
+    if (!active || !confirm(`Chuyển “${active.name}” vào thùng rác?`)) return
     window.clearTimeout(saveTimers.current.get(active.id)); saveTimers.current.delete(active.id)
-    await deleteDocument(active.id)
+    historyBases.current.delete(active.id)
+    await moveDocumentToTrash(active); setTrash((items) => [{ ...active, deletedAt: Date.now() }, ...items]); setLastTrashed([active.id])
     const remaining = documents.filter((item) => item.id !== active.id)
     if (remaining.length) { setDocuments(remaining); selectDocument(remaining[0].id) }
     else { const fresh = createDocument('', 'untitled.md', '# Tài liệu mới\n'); await saveDocument(fresh); setDocuments([fresh]); selectDocument(fresh.id) }
+    notify('Đã chuyển vào thùng rác — có thể hoàn tác', 5000)
   }
 
   const downloadActive = useCallback(() => {
@@ -309,15 +397,16 @@ export default function App() {
     const link = document.createElement('a'); link.href = url; link.download = active.name; link.click(); URL.revokeObjectURL(url); notify('Đã tải file Markdown')
   }, [active, notify])
 
-  const backupWorkspace = useCallback(() => {
+  const backupWorkspace = useCallback(() => { void (async () => {
     const backup = createWorkspaceBackup({ documents, folders, activeId, settings: { theme, allowRemoteImages, sidebarWidth, tocWidth } })
-    downloadJson(backup, `markdown-studio-backup-${new Date().toISOString().slice(0, 10)}.json`)
-    notify('Đã tải bản backup workspace')
-  }, [activeId, allowRemoteImages, documents, folders, notify, sidebarWidth, theme, tocWidth])
+    const blob = await createWorkspaceZip(backup)
+    downloadBlob(blob, `markdown-studio-backup-${new Date().toISOString().slice(0, 10)}.zip`)
+    notify('Đã tải backup ZIP của workspace')
+  })().catch(() => notify('Không thể tạo backup ZIP', 3000)) }, [activeId, allowRemoteImages, documents, folders, notify, sidebarWidth, theme, tocWidth])
 
   const restoreWorkspaceFile = async (file: File) => {
     try {
-      const backup = parseWorkspaceBackup(await file.text())
+      const backup = await parseWorkspaceFile(file)
       if (!confirm(`Khôi phục ${backup.documents.length} tài liệu? Workspace hiện tại sẽ được thay thế.`)) return
       saveTimers.current.forEach((timer) => window.clearTimeout(timer)); saveTimers.current.clear()
       await replaceWorkspace(backup.documents, backup.folders, backup.activeId)
@@ -327,6 +416,68 @@ export default function App() {
       setStorageError(''); notify('Khôi phục workspace thành công')
     } catch { notify('Backup không hợp lệ hoặc không thể khôi phục', 3500) }
     finally { if (restoreInput.current) restoreInput.current.value = '' }
+  }
+
+  const restoreTrashItems = async (ids: string[]) => {
+    const restored: DocumentRecord[] = []
+    for (const id of ids) {
+      const item = trash.find((entry) => entry.id === id)
+      if (!item) continue
+      const document = await restoreTrashedDocument(id)
+      if (!document) continue
+      const folder = folderOf(document.path)
+      const name = uniqueDocumentName([...documents, ...restored], folder, document.name)
+      const safe = name === document.name ? document : { ...document, name, path: [folder, name].filter(Boolean).join('/') }
+      if (safe !== document) await saveDocument(safe)
+      restored.push(safe)
+    }
+    if (!restored.length) return
+    const restoredFolders = restored.map((document) => folderOf(document.path)).filter(Boolean)
+    const nextFolders = [...new Set([...folders, ...restoredFolders])]
+    await saveFolders(nextFolders)
+    setFolders(nextFolders); setDocuments((items) => [...restored, ...items]); setTrash((items) => items.filter((item) => !ids.includes(item.id))); setLastTrashed([]); selectDocument(restored[0].id); notify(`Đã khôi phục ${restored.length} tài liệu`)
+  }
+
+  const permanentlyDeleteTrashItem = async (id: string) => {
+    if (!confirm('Xóa vĩnh viễn tài liệu này? Thao tác không thể hoàn tác.')) return
+    await deleteDocument(id); setTrash((items) => items.filter((item) => item.id !== id)); notify('Đã xóa vĩnh viễn')
+  }
+
+  const openHistory = async () => {
+    if (!active) return
+    setHistory(await getDocumentHistory(active.id)); setHistoryOpen(true)
+  }
+
+  const restoreHistoryVersion = async (version: HistoryRecord) => {
+    if (!active || !confirm(`Khôi phục phiên bản lúc ${new Date(version.savedAt).toLocaleString('vi-VN')}?`)) return
+    const next = { ...active, content: version.content, updatedAt: Date.now() }
+    await saveDocumentWithHistory(next, active); setDocuments((items) => items.map((item) => item.id === active.id ? next : item)); setHistory(await getDocumentHistory(active.id)); notify('Đã khôi phục phiên bản cũ')
+  }
+
+  const openFromDisk = async () => {
+    if (!window.showOpenFilePicker) return fileInput.current?.click()
+    try {
+      const handles = await window.showOpenFilePicker({ multiple: true, types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md', '.markdown', '.mdown'] } }] })
+      const files = await Promise.all(handles.map((handle) => handle.getFile()))
+      const result = await filesToDocuments(files, selectedFolder)
+      const imported = result.documents.map((document, index) => {
+        const name = uniqueDocumentName([...documents], selectedFolder, document.name)
+        const next = { ...document, name, path: [selectedFolder, name].filter(Boolean).join('/') }
+        fileHandles.current.set(next.id, handles[index])
+        return next
+      })
+      await saveDocuments(imported); setDocuments((items) => [...imported, ...items]); if (imported[0]) selectDocument(imported[0].id); notify(`Đã mở ${imported.length} file từ máy`)
+    } catch (error) { if ((error as DOMException).name !== 'AbortError') notify('Không thể mở file từ máy', 2800) }
+  }
+
+  const saveToDisk = async () => {
+    if (!active) return
+    if (!window.showSaveFilePicker) return downloadActive()
+    try {
+      let handle = fileHandles.current.get(active.id)
+      handle ??= await window.showSaveFilePicker({ suggestedName: active.name, types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }] })
+      const writable = await handle.createWritable(); await writable.write(active.content); await writable.close(); fileHandles.current.set(active.id, handle); notify('Đã ghi trực tiếp vào file trên máy')
+    } catch (error) { if ((error as DOMException).name !== 'AbortError') notify('Không thể ghi file lên máy', 2800) }
   }
 
   const startPanelResize = (kind: 'sidebar' | 'toc', event: React.PointerEvent) => {
@@ -370,12 +521,46 @@ export default function App() {
     } catch { notify('Trình duyệt không cho phép sao chép tự động', 2800) }
   }
 
-  const filtered = useMemo(() => documents.filter((document) => document.name.toLowerCase().includes(query.toLowerCase()) || document.path.toLowerCase().includes(query.toLowerCase())), [documents, query])
+  const filtered = useMemo(() => {
+    if (!query.trim()) return documents
+    const byId = new Map(documents.map((document) => [document.id, document]))
+    return searchHits.map((hit) => byId.get(hit.id)).filter((document): document is DocumentRecord => Boolean(document))
+  }, [documents, query, searchHits])
+  const storagePercent = storageEstimate.quota ? Math.min(100, storageEstimate.usage / storageEstimate.quota * 100) : 0
+  const formatBytes = (value: number) => value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(1)} GB` : `${(value / 1024 ** 2).toFixed(value < 10 * 1024 ** 2 ? 1 : 0)} MB`
+  const trashFolders = useMemo(() => [...new Set(trash.map((item) => folderOf(item.path)).filter(Boolean))].sort(), [trash])
   const commandDocuments = useMemo(() => {
     const needle = commandQuery.trim().toLowerCase()
     return (needle ? documents.filter((document) => document.path.toLowerCase().includes(needle)) : documents).slice(0, 6)
   }, [commandQuery, documents])
   const runCommand = (action: () => void) => { action(); setCommandOpen(false); setCommandQuery('') }
+  const navigateCommands = (event: React.KeyboardEvent<HTMLElement>) => {
+    const buttons = [...(commandPaletteRef.current?.querySelectorAll<HTMLButtonElement>('.command-results button') ?? [])]
+    if (!buttons.length) return
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const delta = event.key === 'ArrowDown' ? 1 : -1
+      const next = commandIndex < 0 ? (delta > 0 ? 0 : buttons.length - 1) : (commandIndex + delta + buttons.length) % buttons.length
+      setCommandIndex(next); buttons[next].focus()
+    } else if (event.key === 'Enter' && event.target instanceof HTMLInputElement) {
+      event.preventDefault(); buttons[Math.max(0, commandIndex)]?.click()
+    }
+  }
+  useEffect(() => {
+    if (!commandOpen) return
+    const handler = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || (event.key !== 'ArrowDown' && event.key !== 'ArrowUp')) return
+      const buttons = [...(commandPaletteRef.current?.querySelectorAll<HTMLButtonElement>('.command-results button') ?? [])]
+      if (!buttons.length) return
+      event.preventDefault()
+      setCommandIndex((current) => {
+        const delta = event.key === 'ArrowDown' ? 1 : -1
+        const next = current < 0 ? (delta > 0 ? 0 : buttons.length - 1) : (current + delta + buttons.length) % buttons.length
+        buttons[next].focus(); return next
+      })
+    }
+    window.addEventListener('keydown', handler); return () => window.removeEventListener('keydown', handler)
+  }, [commandOpen])
   const updateReadingState = () => {
     const root = previewRef.current
     if (!root) return
@@ -391,22 +576,25 @@ export default function App() {
     <header className="topbar">
       <div className="brand"><button className="icon-button mobile-only" onClick={() => setMobileLibrary(true)} aria-label="Mở thư viện"><Menu /></button><div className="brand-mark">M↓</div><span>Markdown Studio</span></div>
       <div className="document-title"><span className="status-dot" />{active?.name ?? 'Đang tải…'}</div>
-      <div className="top-actions">{notice && <div className="notice"><Check /> {notice}</div>}<button className="icon-button" onClick={() => { setCommandOpen(true); setCommandQuery('') }} aria-label="Mở bảng lệnh" title="Bảng lệnh (Ctrl/⌘ K)"><Command /></button><div className="segmented" aria-label="Chế độ hiển thị"><button className={mode === 'editor' ? 'active' : ''} onClick={() => setMode('editor')}>Editor</button><button className={mode === 'preview' ? 'active' : ''} onClick={() => setMode('preview')}>Preview</button></div><button className="icon-button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Đổi giao diện">{theme === 'dark' ? <Sun /> : <Moon />}</button></div>
+      <div className="top-actions">{notice && <div className="notice"><Check /> {notice}{lastTrashed.length > 0 && <button onClick={() => void restoreTrashItems(lastTrashed)}>Hoàn tác</button>}</div>}<button className="icon-button" onClick={() => { setCommandOpen(true); setCommandQuery('') }} aria-label="Mở bảng lệnh" title="Bảng lệnh (Ctrl/⌘ K)"><Command /></button><div className="segmented" aria-label="Chế độ hiển thị"><button className={mode === 'editor' ? 'active' : ''} onClick={() => setMode('editor')}>Editor</button><button className={mode === 'preview' ? 'active' : ''} onClick={() => setMode('preview')}>Preview</button></div><button className="icon-button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Đổi giao diện">{theme === 'dark' ? <Sun /> : <Moon />}</button></div>
     </header>
 
     {storageError && <div className="recovery-banner" role="alert"><div><strong>Không thể lưu ổn định</strong><span>{storageError}</span></div><button onClick={backupWorkspace}><DatabaseBackup /> Backup ngay</button><button className="banner-close" onClick={() => setStorageError('')} aria-label="Đóng cảnh báo"><X /></button></div>}
+    {pwaUpdate && <div className="update-banner" role="status"><div><strong>Có phiên bản mới</strong><span>Cập nhật để nhận tính năng và bản sửa lỗi mới nhất.</span></div><button onClick={() => pwaUpdate.waiting?.postMessage('SKIP_WAITING')}>Cập nhật ngay</button><button className="banner-close" onClick={() => setPwaUpdate(null)} aria-label="Đóng thông báo cập nhật"><X /></button></div>}
 
     <div className={`workspace ${sidebarOpen ? '' : 'sidebar-collapsed'} ${tocOpen ? '' : 'toc-collapsed'}`}>
       <aside className={`sidebar ${mobileLibrary ? 'mobile-open' : ''}`}>
         <div className="sidebar-heading"><div><span className="eyebrow">WORKSPACE</span><h2>Thư viện</h2></div><button className="icon-button mobile-only" onClick={() => setMobileLibrary(false)} aria-label="Đóng"><X /></button></div>
-        <div className="library-actions"><button className="primary-button" onClick={() => fileInput.current?.click()}><Upload /> Nhập file</button><button className="icon-button bordered" onClick={addFolder} aria-label="Tạo thư mục" title="Tạo thư mục"><FolderPlus /></button><button className="icon-button bordered" onClick={addDocument} aria-label="Tạo tài liệu" title="Tạo tài liệu"><Plus /></button></div>
-        <div className="workspace-actions"><button onClick={backupWorkspace} title="Backup toàn bộ workspace"><DatabaseBackup /> Backup</button><button onClick={() => restoreInput.current?.click()} title="Khôi phục workspace"><ArchiveRestore /> Restore</button></div>
+        <div className="library-actions"><button className="primary-button" onClick={() => void openFromDisk()}><Upload /> Mở file</button><button className="icon-button bordered" onClick={() => void importDirectory()} aria-label="Nhập thư mục" title="Nhập toàn bộ thư mục Markdown"><FolderInput /></button><button className="icon-button bordered" onClick={addFolder} aria-label="Tạo thư mục" title="Tạo thư mục"><FolderPlus /></button><button className="icon-button bordered" onClick={addDocument} aria-label="Tạo tài liệu" title="Tạo tài liệu"><Plus /></button></div>
+        <div className="workspace-actions"><button onClick={backupWorkspace} title="Backup toàn bộ workspace"><DatabaseBackup /> Backup ZIP</button><button onClick={() => restoreInput.current?.click()} title="Khôi phục workspace"><ArchiveRestore /> Restore</button><button onClick={() => setTrashOpen(true)} title="Mở thùng rác"><Trash2 /> {trash.length}</button></div>
         <input ref={fileInput} type="file" accept=".md,.markdown,.mdown,text/markdown" multiple hidden onChange={(event) => event.target.files && void importFiles(event.target.files)} />
-        <input ref={restoreInput} type="file" accept="application/json,.json" hidden onChange={(event) => event.target.files?.[0] && void restoreWorkspaceFile(event.target.files[0])} />
-        <label className="search"><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm tài liệu…" /></label>
-        <div className="file-count"><Files /> {filtered.length} tài liệu <span>{selectedFolder ? `• ${selectedFolder}` : '• thư mục gốc'}</span></div>
+        <input ref={restoreInput} type="file" accept="application/json,.json,application/zip,.zip" hidden onChange={(event) => event.target.files?.[0] && void restoreWorkspaceFile(event.target.files[0])} />
+        <label className="search"><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm tên, path hoặc nội dung…" /></label>
+        <div className="file-count"><Files /> {filtered.length} tài liệu <span>{query ? '• full-text' : selectedFolder ? `• ${selectedFolder}` : '• thư mục gốc'}</span></div>
+        {query && searchHits[0]?.snippet && <button className="search-best-hit" onClick={() => selectDocument(searchHits[0].id)}><strong>Kết quả phù hợp nhất</strong><span>{searchHits[0].snippet}</span></button>}
         {selectedFolder && <div className="folder-actions"><button onClick={() => void renameSelectedFolder()}><FolderPen /> Đổi tên</button><button className="danger" onClick={() => void deleteSelectedFolder()}><FolderX /> Xóa</button></div>}
         <FolderTree documents={filtered} folders={folders} activeId={activeId} selectedFolder={selectedFolder} collapsed={collapsedFolders} onSelectDocument={selectDocument} onSelectFolder={setSelectedFolder} onToggleFolder={(path) => setCollapsedFolders((current) => { const next = new Set(current); if (next.has(path)) next.delete(path); else next.add(path); return next })} />
+        <div className={`storage-dashboard ${storagePercent >= 80 ? 'warning' : ''}`} title={`${formatBytes(storageEstimate.usage)} / ${formatBytes(storageEstimate.quota)}`}><div><HardDrive /><strong>Dung lượng</strong><span>{storageEstimate.quota ? `${storagePercent.toFixed(1)}%` : 'N/A'}</span></div><div className="storage-meter"><i style={{ width: `${storagePercent}%` }} /></div><small>{formatBytes(storageEstimate.usage)} / {storageEstimate.quota ? formatBytes(storageEstimate.quota) : 'không xác định'}{storagePercent >= 80 ? ' • Nên backup và dọn thùng rác' : ''}</small></div>
         <div className="privacy"><span className="privacy-icon">⌁</span><div><strong>Lưu cục bộ</strong><p>Tài liệu không rời khỏi trình duyệt.</p></div></div>
         <div className="panel-resizer sidebar-resizer" onPointerDown={(event) => startPanelResize('sidebar', event)} role="separator" aria-label="Thay đổi độ rộng thư viện" />
       </aside>
@@ -414,7 +602,7 @@ export default function App() {
       <main className="main-panel">
         <div className="document-toolbar"><button className="icon-button desktop-only" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label="Ẩn hiện thư viện">{sidebarOpen ? <PanelLeftClose /> : <ChevronRight />}</button><div className="path"><BookOpen /> {active?.path ?? ''}</div>
           <select className="folder-select" aria-label="Chuyển tài liệu vào thư mục" value={active ? folderOf(active.path) : ''} onChange={(event) => void moveActive(event.target.value)}><option value="">Thư mục gốc</option>{folders.map((folder) => <option key={folder} value={folder}>{folder}</option>)}</select>
-          <button className="icon-button" onClick={() => setAllowRemoteImages((value) => !value)} aria-label={allowRemoteImages ? 'Chặn ảnh từ xa' : 'Cho phép ảnh từ xa'} title={allowRemoteImages ? 'Ảnh từ xa đang được phép' : 'Ảnh từ xa đang bị chặn'}>{allowRemoteImages ? <Image /> : <ImageOff />}</button><button className="icon-button" onClick={() => void renameActive()} aria-label="Đổi tên tài liệu" title="Đổi tên"><Pencil /></button><button className="icon-button" onClick={downloadActive} aria-label="Tải file về máy" title="Tải file về máy (Ctrl/⌘ S)"><ArrowDownToLine /></button><button className="icon-button" onClick={() => { setMode('preview'); setReadingMode(true) }} aria-label="Chế độ đọc toàn trang" title="Đọc toàn trang (Ctrl/⌘ ⇧ F)"><Maximize2 /></button><button className="icon-button danger" onClick={() => void removeActive()} aria-label="Xóa tài liệu"><Trash2 /></button><button className="icon-button desktop-only" onClick={() => setTocOpen(!tocOpen)} aria-label="Ẩn hiện mục lục">{tocOpen ? <PanelRightClose /> : <ChevronLeft />}</button>
+          <button className="icon-button" onClick={() => setAllowRemoteImages((value) => !value)} aria-label={allowRemoteImages ? 'Chặn ảnh từ xa' : 'Cho phép ảnh từ xa'} title={allowRemoteImages ? 'Ảnh từ xa đang được phép' : 'Ảnh từ xa đang bị chặn'}>{allowRemoteImages ? <Image /> : <ImageOff />}</button><button className="icon-button" onClick={() => void openHistory()} aria-label="Lịch sử tài liệu" title="Lịch sử phiên bản"><History /></button><button className="icon-button" onClick={() => void renameActive()} aria-label="Đổi tên tài liệu" title="Đổi tên"><Pencil /></button><button className="icon-button" onClick={() => void saveToDisk()} aria-label="Lưu trực tiếp về máy" title="Lưu trực tiếp bằng File System Access API"><Save /></button><button className="icon-button" onClick={downloadActive} aria-label="Tải file về máy" title="Tải file về máy (Ctrl/⌘ S)"><ArrowDownToLine /></button><button className="icon-button" onClick={() => { setMode('preview'); setReadingMode(true) }} aria-label="Chế độ đọc toàn trang" title="Đọc toàn trang (Ctrl/⌘ ⇧ F)"><Maximize2 /></button><button className="icon-button danger" onClick={() => void removeActive()} aria-label="Chuyển vào thùng rác"><Trash2 /></button><button className="icon-button desktop-only" onClick={() => setTocOpen(!tocOpen)} aria-label="Ẩn hiện mục lục">{tocOpen ? <PanelRightClose /> : <ChevronLeft />}</button>
         </div>
         {mode === 'editor' ? <textarea className="editor" aria-label="Nội dung Markdown" spellCheck={false} value={active?.content ?? ''} onChange={(event) => updateContent(event.target.value)} /> : <article ref={previewRef} className="preview markdown-body" onScroll={updateReadingState} onClick={(event) => void onPreviewClick(event)} dangerouslySetInnerHTML={{ __html: html }} />}
         <div className="shortcut-hints"><span><kbd>⌘/Ctrl S</kbd> tải file</span><span><kbd>⌘/Ctrl O</kbd> mở file</span><span><kbd>⌘/Ctrl ⇧ P</kbd> đổi chế độ</span><span><kbd>⌘/Ctrl ⇧ F</kbd> đọc toàn trang</span></div>
@@ -426,6 +614,8 @@ export default function App() {
     </div>
     {mobileLibrary && <button className="backdrop" onClick={() => setMobileLibrary(false)} aria-label="Đóng thư viện" />}
     {isDragging && <div className="drop-overlay"><div><FilePlus2 /><strong>Thả file Markdown vào đây</strong><span>Nhập vào {selectedFolder || 'thư mục gốc'} • tối đa 2 MB/file</span></div></div>}
-    {commandOpen && <div className="command-backdrop" onMouseDown={(event) => { if (event.currentTarget === event.target) setCommandOpen(false) }}><section className="command-palette" role="dialog" aria-modal="true" aria-label="Bảng lệnh"><label><Search /><input autoFocus value={commandQuery} onChange={(event) => setCommandQuery(event.target.value)} placeholder="Tìm file hoặc lệnh…" /></label><div className="command-results"><span className="command-group">LỆNH NHANH</span><button onClick={() => runCommand(() => setTheme((value) => value === 'dark' ? 'light' : 'dark'))}>{theme === 'dark' ? <Sun /> : <Moon />} Đổi giao diện</button><button onClick={() => runCommand(() => { setMode('preview'); setReadingMode(true) })}><Maximize2 /> Đọc toàn trang</button><button onClick={() => runCommand(backupWorkspace)}><DatabaseBackup /> Backup workspace</button><button onClick={() => runCommand(() => setAllowRemoteImages((value) => !value))}>{allowRemoteImages ? <ImageOff /> : <Image />} {allowRemoteImages ? 'Chặn ảnh từ xa' : 'Cho phép ảnh từ xa'}</button><span className="command-group">TÀI LIỆU</span>{commandDocuments.map((document) => <button key={document.id} onClick={() => runCommand(() => selectDocument(document.id))}><BookOpen /><span><strong>{document.name}</strong><small>{document.path}</small></span></button>)}</div><footer><kbd>Ctrl/⌘ K</kbd> mở bảng lệnh <kbd>Esc</kbd> đóng</footer></section></div>}
+    {trashOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.currentTarget === event.target) setTrashOpen(false) }}><section className="manager-modal" role="dialog" aria-modal="true" aria-label="Thùng rác"><header><div><span className="eyebrow">WORKSPACE</span><h2>Thùng rác</h2></div><button className="icon-button" onClick={() => setTrashOpen(false)} aria-label="Đóng thùng rác"><X /></button></header>{trashFolders.length > 0 && <div className="trash-folder-actions">{trashFolders.map((folder) => { const ids = trash.filter((item) => folderOf(item.path) === folder || folderOf(item.path).startsWith(`${folder}/`)).map((item) => item.id); return <button key={folder} onClick={() => void restoreTrashItems(ids)}><FolderInput /><span><strong>{folder}</strong><small>Khôi phục {ids.length} file trong folder</small></span></button> })}</div>}<div className="manager-list">{trash.length ? trash.map((item) => <article key={item.id}><Trash2 /><div><strong>{item.name}</strong><small>{item.path} • {new Date(item.deletedAt).toLocaleString('vi-VN')}</small></div><button onClick={() => void restoreTrashItems([item.id])} title="Khôi phục"><RotateCcw /></button><button className="danger" onClick={() => void permanentlyDeleteTrashItem(item.id)} title="Xóa vĩnh viễn"><X /></button></article>) : <p className="empty-state">Thùng rác đang trống.</p>}</div></section></div>}
+    {historyOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.currentTarget === event.target) setHistoryOpen(false) }}><section className="manager-modal" role="dialog" aria-modal="true" aria-label="Lịch sử tài liệu"><header><div><span className="eyebrow">{active?.name}</span><h2>Lịch sử phiên bản</h2></div><button className="icon-button" onClick={() => setHistoryOpen(false)} aria-label="Đóng lịch sử"><X /></button></header><div className="manager-list">{history.length ? history.map((version) => <article key={version.key}><Clock3 /><div><strong>{new Date(version.savedAt).toLocaleString('vi-VN')}</strong><small>{version.content.length.toLocaleString('vi-VN')} ký tự</small></div><button onClick={() => void restoreHistoryVersion(version)} title="Khôi phục phiên bản"><RotateCcw /></button></article>) : <p className="empty-state">Chưa có phiên bản cũ. Lịch sử được tạo sau mỗi đợt autosave có thay đổi.</p>}</div></section></div>}
+    {commandOpen && <div className="command-backdrop" onMouseDown={(event) => { if (event.currentTarget === event.target) setCommandOpen(false) }}><section ref={commandPaletteRef} className="command-palette" role="dialog" aria-modal="true" aria-label="Bảng lệnh"><label><Search /><input autoFocus value={commandQuery} onChange={(event) => { setCommandQuery(event.target.value); setCommandIndex(-1) }} onKeyDown={navigateCommands} placeholder="Tìm file hoặc lệnh…" /></label><div className="command-results"><span className="command-group">LỆNH NHANH</span><button onClick={() => runCommand(() => setTheme((value) => value === 'dark' ? 'light' : 'dark'))}>{theme === 'dark' ? <Sun /> : <Moon />} Đổi giao diện</button><button onClick={() => runCommand(() => { setMode('preview'); setReadingMode(true) })}><Maximize2 /> Đọc toàn trang</button><button onClick={() => runCommand(backupWorkspace)}><DatabaseBackup /> Backup workspace</button><button onClick={() => runCommand(() => setAllowRemoteImages((value) => !value))}>{allowRemoteImages ? <ImageOff /> : <Image />} {allowRemoteImages ? 'Chặn ảnh từ xa' : 'Cho phép ảnh từ xa'}</button><span className="command-group">TÀI LIỆU</span>{commandDocuments.map((document) => <button key={document.id} onClick={() => runCommand(() => selectDocument(document.id))}><BookOpen /><span><strong>{document.name}</strong><small>{document.path}</small></span></button>)}</div><footer><kbd>↑↓</kbd> di chuyển <kbd>Enter</kbd> chọn <kbd>Esc</kbd> đóng</footer></section></div>}
   </div>
 }

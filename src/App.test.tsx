@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
 import { deleteDocument, getDocuments } from './lib/storage'
@@ -54,7 +54,7 @@ describe('Markdown Studio', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Tạo thư mục' }))
     await userEvent.click(screen.getByRole('button', { name: 'Tạo tài liệu' }))
     expect((await screen.findAllByText('Laravel')).length).toBeGreaterThanOrEqual(1)
-    expect((await getDocuments()).some((document) => document.path.startsWith('Laravel/untitled-'))).toBe(true)
+    expect((await getDocuments()).some((document) => document.path.startsWith('Laravel/untitled'))).toBe(true)
     await userEvent.click(screen.getByRole('button', { name: 'Đóng thư mục Laravel' }))
     expect(screen.queryByRole('button', { name: /untitled-1\.md/ })).not.toBeInTheDocument()
   })
@@ -105,5 +105,24 @@ describe('Markdown Studio', () => {
       expect(stored.some((document) => document.content === '# File đầu tiên đã sửa')).toBe(true)
       expect(stored.some((document) => document.content === '# File thứ hai đã sửa')).toBe(true)
     }, { timeout: 2500 })
+  })
+
+  it('opens the command palette and executes a quick command', async () => {
+    render(<App />)
+    await screen.findByRole('heading', { name: 'Chào mừng đến Markdown Studio' }, { timeout: 5000 })
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+    const palette = screen.getByRole('dialog', { name: 'Bảng lệnh' })
+    expect(palette).toBeInTheDocument()
+    await userEvent.click(within(palette).getByRole('button', { name: 'Đổi giao diện' }))
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(screen.queryByRole('dialog', { name: 'Bảng lệnh' })).not.toBeInTheDocument()
+  })
+
+  it('renames the active document and persists its new path', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValue('renamed-guide')
+    render(<App />)
+    await screen.findByRole('heading', { name: 'Chào mừng đến Markdown Studio' }, { timeout: 5000 })
+    await userEvent.click(screen.getByRole('button', { name: 'Đổi tên tài liệu' }))
+    await waitFor(async () => expect((await getDocuments()).some((document) => document.path === 'renamed-guide.md')).toBe(true))
   })
 })

@@ -45,3 +45,13 @@ export async function getFolders(): Promise<string[]> {
 export async function saveFolders(folders: string[]): Promise<void> {
   await (await db()).put(META, [...new Set(folders)].sort(), 'folders')
 }
+
+export async function replaceWorkspace(documents: DocumentRecord[], folders: string[], activeId?: string): Promise<void> {
+  const database = await db()
+  const transaction = database.transaction([STORE, META], 'readwrite')
+  await transaction.objectStore(STORE).clear()
+  await Promise.all(documents.map((document) => transaction.objectStore(STORE).put(document)))
+  await transaction.objectStore(META).put([...new Set(folders)].sort(), 'folders')
+  if (activeId) await transaction.objectStore(META).put(activeId, 'activeId')
+  await transaction.done
+}

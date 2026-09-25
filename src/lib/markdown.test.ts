@@ -68,4 +68,13 @@ describe('Markdown rendering', () => {
     expect(result.html).toContain('<s>old</s>')
     expect(result.html).toContain('class="footnotes"')
   })
+
+  it('blocks remote images by default and allows an explicit opt-in', async () => {
+    const source = '![Tracking pixel](https://example.com/pixel.png)'
+    const blocked = await renderMarkdown(source)
+    expect(blocked.html).toContain('remote-image-blocked')
+    expect(blocked.html).not.toContain('<img')
+    const allowed = await renderMarkdown(source, { allowRemoteImages: true })
+    expect(allowed.html).toContain('<img')
+  })
 })

@@ -20,8 +20,10 @@ Markdown Studio là ứng dụng đọc, chỉnh sửa và tổ chức tài li�
 - File import được đưa vào thư mục đang chọn; đường dẫn tương đối có sẵn được giữ lại.
 - Tạo thư mục nhiều cấp, chọn thư mục đích và chuyển tài liệu giữa các thư mục.
 - Thu gọn từng thư mục hoặc toàn bộ thư mục gốc.
+- Đổi tên file/thư mục, xóa cả cây thư mục và chặn thao tác tạo đường dẫn trùng.
 - Tìm theo tên file hoặc đường dẫn.
 - Giới hạn 2 MB/file để tránh làm treo tab trình duyệt.
+- Backup/restore toàn bộ workspace bằng JSON có version và validation.
 
 ### Markdown và code
 
@@ -72,6 +74,15 @@ classDiagram
 - Scrollbar mỏng, dark/light mode và responsive trên desktop/mobile.
 - Khi chuyển tài liệu, preview trở về đầu trang và tiến trình đặt lại `0%`.
 - Chế độ đọc toàn trang ẩn toàn bộ sidebar, TOC và toolbar để tập trung vào nội dung; nhấn `Esc` để thoát.
+- Sidebar và TOC có thể kéo thay đổi độ rộng; kích thước được ghi nhớ trên thiết bị.
+- Command palette mở bằng `Ctrl/⌘ + K` để tìm file, đổi theme, backup và bật chế độ đọc.
+- Ảnh HTTP/HTTPS trong Markdown bị chặn mặc định để tránh request ngoài ý muốn; có thể bật theo phiên làm việc.
+
+### Offline và phục hồi
+
+- Web App Manifest và service worker cho phép cài đặt như PWA và mở lại sau khi tài nguyên đã được cache.
+- Khi IndexedDB không khả dụng hoặc hết quota, app hiển thị recovery banner và nút backup ngay.
+- Mermaid và bộ render Markdown/Shiki được tải theo nhu cầu; Mermaid chỉ tải khi tài liệu thật sự có diagram.
 
 ### Phím tắt
 
@@ -81,6 +92,7 @@ classDiagram
 | `Ctrl/⌘ + O` | Mở hộp chọn file |
 | `Ctrl/⌘ + Shift + P` | Chuyển giữa Editor và Preview |
 | `Ctrl/⌘ + Shift + F` | Bật/tắt chế độ đọc toàn trang |
+| `Ctrl/⌘ + K` | Mở/đóng command palette |
 
 ## Cách sử dụng
 
@@ -143,6 +155,16 @@ Paste / Create / Import / Drop
 3. Sau 450 ms không có thay đổi mới, document được ghi vào IndexedDB.
 4. Tài liệu vẫn chỉ tồn tại trong browser profile hiện tại cho đến khi người dùng tải file về máy.
 
+### Backup và restore workspace
+
+1. Nhấn **Backup** trong sidebar để tải file `markdown-studio-backup-YYYY-MM-DD.json`.
+2. Backup chứa documents, folders, active document và các setting giao diện; không chứa executable code.
+3. Nhấn **Restore**, chọn đúng file JSON và xác nhận thay thế workspace hiện tại.
+4. Restore kiểm tra version, cấu trúc document và đường dẫn trùng trước khi ghi transaction vào IndexedDB.
+
+> [!WARNING]
+> Restore thay thế toàn bộ workspace hiện tại. Hãy backup trước khi restore một file chưa được kiểm chứng.
+
 ## Lưu trữ dữ liệu
 
 Database IndexedDB: `markdown-studio`.
@@ -175,7 +197,8 @@ markdown-studio/
 │   │   ├── diagrams.ts            # Mermaid/UML renderer
 │   │   ├── files.ts               # Validate và đọc file import
 │   │   ├── markdown.ts            # Markdown, Shiki, sanitize, TOC, code toolbar
-│   │   └── storage.ts             # IndexedDB repository
+│   │   ├── storage.ts             # IndexedDB repository
+│   │   └── workspace.ts           # Backup/restore schema và validation
 │   ├── test/setup.ts
 │   ├── App.tsx                    # Điều phối state và các user flow
 │   ├── main.tsx
@@ -183,6 +206,8 @@ markdown-studio/
 │   ├── types.ts
 │   └── vendor.d.ts
 ├── index.html                     # SEO metadata và application entry
+├── public/manifest.webmanifest    # Metadata cài đặt PWA
+├── public/sw.js                   # Offline runtime cache
 ├── package.json
 ├── vite.config.ts
 └── README.md
@@ -207,6 +232,8 @@ npm audit --omit=dev
 ```
 
 Test bao phủ import file, giới hạn dung lượng, folder path, IndexedDB, Markdown mở rộng, XSS, link ngoài, Shiki đa ngôn ngữ, Mermaid fence, code copy, phím tắt, tạo/collapse folder và download Markdown.
+
+Build dùng dynamic import để tách Markdown/Shiki và Mermaid khỏi entry bundle. Grammar Shiki tiếp tục được tải riêng theo ngôn ngữ xuất hiện trong từng tài liệu.
 
 ## Deploy GitHub Pages
 

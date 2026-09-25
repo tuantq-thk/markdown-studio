@@ -70,13 +70,23 @@ async function getParser() {
   return parserPromise
 }
 
-export async function renderMarkdown(source: string): Promise<{ html: string; headings: Heading[] }> {
+export async function renderMarkdown(source: string, options: { allowRemoteImages?: boolean } = {}): Promise<{ html: string; headings: Heading[] }> {
   slugCounts.clear()
   await loadLanguages(source)
   const parser = await getParser()
   const rendered = parser.render(source)
   const container = document.createElement('div')
   container.innerHTML = DOMPurify.sanitize(rendered, { USE_PROFILES: { html: true }, ADD_ATTR: ['target', 'rel', 'checked', 'disabled'] })
+  if (!options.allowRemoteImages) container.querySelectorAll<HTMLImageElement>('img').forEach((image) => {
+    const source = image.getAttribute('src') ?? ''
+    if (/^https?:\/\//i.test(source)) {
+      const placeholder = document.createElement('span')
+      placeholder.className = 'remote-image-blocked'
+      placeholder.textContent = `Ảnh từ xa đã bị chặn${image.alt ? `: ${image.alt}` : ''}`
+      placeholder.title = source
+      image.replaceWith(placeholder)
+    }
+  })
   container.querySelectorAll('pre').forEach((pre) => {
     const wrapper = document.createElement('div'); wrapper.className = 'code-block'
     const toolbar = document.createElement('div'); toolbar.className = 'code-toolbar'
